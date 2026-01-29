@@ -3,6 +3,7 @@ import os
 import json
 import pandas as pd
 from datetime import datetime
+import pytz  # For Indian Standard Time
 from playwright.async_api import async_playwright
 import gspread
 from google.oauth2.service_account import Credentials
@@ -14,6 +15,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
+
+def get_ist_time():
+    """Returns current time in Indian Standard Time."""
+    IST = pytz.timezone('Asia/Kolkata')
+    return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
 
 async def scrape_chartink():
     print("Launching browser...")
@@ -39,9 +45,9 @@ async def scrape_chartink():
             for df in dfs:
                 if len(df) > 1 and len(df.columns) > 1:
                     # --- CLEAN HEADERS ---
-                    # Turns "45r_Sort_table_by..." -> "45r"
                     new_columns = []
                     for c in df.columns:
+                        # Remove "Sort_table..." junk
                         clean_c = str(c).split("_Sort_")[0].strip()
                         clean_c = clean_c.replace(" ", "_").replace(".", "")
                         new_columns.append(clean_c)
@@ -83,51 +89,50 @@ def update_google_sheet(data_frames):
             worksheet = sh.worksheet(tab_title)
         except:
             worksheet = sh.add_worksheet(title=tab_title, rows=1000, cols=20)
-            headers = ['Scraped_At'] + new_df.columns.values.tolist()
-            worksheet.append_row(headers)
+
+        # --- FIX: ENSURE HEADERS EXIST ---
+        # Check if A1 is empty. If so, write headers.
+        if not worksheet.get_values("A1:A1"):
+            print(f"[{tab_title}] Headers missing. Writing headers...")
+            headers = ['Scraped_At_IST'] + new_df.columns.values.tolist()
+            worksheet.update('A1', [headers])
 
         # --- SMART LOGIC SELECTOR ---
-        
         first_col_name = new_df.columns[0].lower()
         
-        # LOGIC A: HISTORY TABLE (First column is 'date' or similar)
+        # LOGIC A: HISTORY TABLE (First column is Date/Day)
         if 'date' in first_col_name or 'day' in first_col_name:
-            print(f"[{tab_title}] Detected History Table (by Date).")
+            print(f"[{tab_title}] Processing History Table...")
             
-            # Get the Date from the new scan (Top Row)
+            # Get the Date from the new scan
             new_date = str(new_df.iloc[0, 0]).strip()
             
-            # Get the Date from the Sheet (Row 2, Column B because Col A is Timestamp)
+            # Get Date from Sheet (B2)
             try:
-                # A2 is timestamp, B2 is the Date column
                 sheet_top_date = worksheet.acell('B2').value
             except:
                 sheet_top_date = ""
 
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            new_df.insert(0, 'Scraped_At', timestamp)
-            row_data = new_df.iloc[0].values.tolist() # Get just the top row
+            timestamp = get_ist_time()
+            new_df.insert(0, 'Scraped_At_IST', timestamp)
+            row_data = new_df.iloc[0].values.tolist()
 
             if new_date == sheet_top_date:
-                # SAME DATE -> OVERWRITE (UPDATE)
-                # This keeps data "Real Time" without adding rows
-                print(f"[{tab_title}] Date ({new_date}) exists. Updating stats in place...")
-                
-                # Update Row 2 (A2:Z2)
+                # OVERWRITE Row 2
+                print(f"[{tab_title}] Updating existing date: {new_date}")
                 cell_list = worksheet.range(f"A2:Z2")
                 for i, cell in enumerate(cell_list):
                     if i < len(row_data):
                         cell.value = row_data[i]
                 worksheet.update_cells(cell_list)
-                
             else:
-                # NEW DATE -> INSERT (APPEND)
-                print(f"[{tab_title}] New Date ({new_date}) detected. Inserting new row.")
+                # INSERT New Row
+                print(f"[{tab_title}] New date found: {new_date}. Appending.")
                 worksheet.insert_rows([row_data], row=2)
 
         # LOGIC B: STOCK SCANNER (First column is Symbol)
         else:
-            print(f"[{tab_title}] Detected Stock Scanner.")
+            print(f"[{tab_title}] Processing Stock Scanner...")
             
             # Identify Symbol Column
             target_col_idx = 0
@@ -136,10 +141,10 @@ def update_google_sheet(data_frames):
                     target_col_idx = idx
                     break
             
-            # Extract Symbols
+            # Compare Lists
             new_symbols = [str(s).strip() for s in new_df.iloc[:, target_col_idx].tolist()]
             
-            # Fetch Old Symbols
+            # Fetch Old Symbols from Sheet (Column + 1 because of Timestamp)
             sheet_col_index = target_col_idx + 1
             existing_rows = worksheet.get_values(f"A2:Z{len(new_df) + 1}")
             existing_symbols = []
@@ -149,12 +154,12 @@ def update_google_sheet(data_frames):
                         existing_symbols.append(str(row[sheet_col_index]).strip())
 
             if new_symbols == existing_symbols:
-                print(f"[{tab_title}] Stock list unchanged. Skipping.")
+                print(f"[{tab_title}] No change in stocks. Skipping.")
                 continue
 
-            print(f"[{tab_title}] Stock list changed. Appending...")
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            new_df.insert(0, 'Scraped_At', timestamp)
+            print(f"[{tab_title}] Change detected. Appending.")
+            timestamp = get_ist_time()
+            new_df.insert(0, 'Scraped_At_IST', timestamp)
             worksheet.insert_rows(new_df.values.tolist(), row=2)
 
 if __name__ == "__main__":
