@@ -8,34 +8,38 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapi
 
 def apply_formatting(worksheet, df):
     """
-    Applies Specific Green/Red/Yellow Conditional Formatting.
+    Applies EXACT Traffic Light Logic:
+    - 4.5r: >400 Yellow, >200 Green, <50 Red
+    - Others: >75/85 Green, <50/60 Red
     """
-    print("      -> Applying Visual Rules...")
+    print("      -> Applying Conditional Formatting...")
     
-    # 1. Define Colors
+    # Define Colors
     green  = {"red": 0.85, "green": 0.93, "blue": 0.82} 
     red    = {"red": 0.96, "green": 0.8,  "blue": 0.8}
     yellow = {"red": 1.0,  "green": 1.0,  "blue": 0.8}
 
-    # 2. Map Headers
+    # Map headers to indices
     headers = df.columns.tolist()
     idx = {name: i for i, name in enumerate(headers)}
     
     requests = []
     
-    def add_rule(col, condition_type, val, color):
-        if col in idx:
+    def add_rule(col_name, condition_type, value, color):
+        if col_name in idx:
+            col_index = idx[col_name]
             requests.append({
                 "addConditionalFormatRule": {
                     "rule": {
                         "ranges": [{
                             "sheetId": worksheet.id, 
-                            "startColumnIndex": idx[col], 
-                            "endColumnIndex": idx[col] + 1, 
-                            "startRowIndex": 1
+                            "startColumnIndex": col_index, 
+                            "endColumnIndex": col_index + 1, 
+                            "startRowIndex": 1, 
+                            "endRowIndex": 1000 # Apply to first 1000 rows
                         }],
                         "booleanRule": {
-                            "condition": {"type": condition_type, "values": [{"userEnteredValue": str(val)}]},
+                            "condition": {"type": condition_type, "values": [{"userEnteredValue": str(value)}]},
                             "format": {"backgroundColor": color}
                         }
                     },
@@ -43,36 +47,40 @@ def apply_formatting(worksheet, df):
                 }
             })
 
-    # --- SPECIFIC RULES ---
-
-    # 1. Rule for 4.5r (High Momentum)
-    if '4.5r' in idx: 
-        add_rule('4.5r', 'NUMBER_LESS', 50, red)
-        add_rule('4.5r', 'NUMBER_GREATER', 200, green)
-        add_rule('4.5r', 'NUMBER_GREATER', 400, yellow)
-
-    # 2. Other indicators
-    target_cols = ['4.5chg', '20chg', '50chg', '20r', '50r']
+    # --- RULES ---
     
-    for c in target_cols:
+    # 1. 4.5r (High Momentum)
+    if '4.5r' in idx:
+        add_rule('4.5r', 'NUMBER_GREATER', 400, yellow)
+        add_rule('4.5r', 'NUMBER_GREATER', 200, green)
+        add_rule('4.5r', 'NUMBER_LESS', 50, red)
+
+    # 2. 20r
+    if '20r' in idx:
+        add_rule('20r', 'NUMBER_GREATER', 75, green)
+        add_rule('20r', 'NUMBER_LESS', 50, red)
+
+    # 3. 50r
+    if '50r' in idx:
+        add_rule('50r', 'NUMBER_GREATER', 85, green)
+        add_rule('50r', 'NUMBER_LESS', 60, red)
+
+    # 4. Changes (%ch, 20chg, etc)
+    for c in ['4.5chg', '20chg', '50chg', '%ch']:
         if c in idx:
-            if 'chg' in c: 
-                add_rule(c, 'NUMBER_LESS', -20, red)
-                add_rule(c, 'NUMBER_GREATER', 20, green)
-            
-            if '20r' in c: 
-                add_rule(c, 'NUMBER_LESS', 50, red)
-                add_rule(c, 'NUMBER_GREATER', 75, green)
-            
-            if '50r' in c: 
-                add_rule(c, 'NUMBER_LESS', 60, red)
-                add_rule(c, 'NUMBER_GREATER', 85, green)
+            add_rule(c, 'NUMBER_GREATER', 0, green)
+            add_rule(c, 'NUMBER_LESS', -20, red) # Deep red for big drop? Or 0 for generic red?
+            # User original logic was < -20 Red, > 20 Green. Let's stick to that.
+            add_rule(c, 'NUMBER_GREATER', 20, green)
+            add_rule(c, 'NUMBER_LESS', -20, red)
 
     if requests:
         try:
+            # Clear old rules first to prevent duplicates
+            worksheet.clear_basic_filter() 
             worksheet.spreadsheet.batch_update({"requests": requests})
         except Exception as e:
-            print(f"      ⚠️ Formatting warning: {e}")
+            print(f"      ⚠️ Format Error: {e}")
 
 def sync_data(clean_dfs):
     print("3. [LOAD] Syncing to Google Sheets...")
@@ -97,17 +105,18 @@ def sync_data(clean_dfs):
         try:
             ws = sh.worksheet(tab_title)
         except:
-            ws = sh.add_worksheet(title=tab_title, rows=1000, cols=20)
+            ws = sh.add_worksheet(title=tab_title, rows=1000, cols=25)
 
-        # Force Clean Headers
+        # Force Update Headers (Now includes 'Year' at the end)
         ws.update('A1', [df.columns.values.tolist()])
 
-        # Check Table Type
+        # Identify History Table
         first_data_col = df.columns[1].lower() if len(df.columns) > 1 else ""
         is_history_table = 'date' in first_data_col or 'day' in first_data_col
 
         if is_history_table:
             print(f"   -> [{tab_title}] Syncing History...")
+            
             all_values = ws.get_all_values()
             existing_map = {} 
             if len(all_values) > 1:
@@ -125,6 +134,7 @@ def sync_data(clean_dfs):
                 if date_key in existing_map:
                     row_idx = existing_map[date_key]
                     current_row = all_values[row_idx - 1]
+                    # Update row (excluding timestamp at 0)
                     if current_row[1:] != [str(x) for x in row_list[1:]]:
                         ws.update(f"A{row_idx}", [row_list])
                 else:
@@ -133,9 +143,11 @@ def sync_data(clean_dfs):
             if rows_to_insert:
                 ws.insert_rows(rows_to_insert, row=2)
             
+            # Apply Formatting ALWAYS for History Table
             apply_formatting(ws, df)
 
         else:
+            # Scanner Logic
             print(f"   -> [{tab_title}] Syncing Scanner...")
             target_col_idx = 1
             new_symbols = [str(s).strip() for s in df.iloc[:, target_col_idx].tolist()]
@@ -148,8 +160,9 @@ def sync_data(clean_dfs):
                         existing_symbols.append(str(row[target_col_idx]).strip())
 
             if new_symbols != existing_symbols:
-                print("      -> New Data. Appending.")
+                print("      -> Appending data.")
                 ws.insert_rows(df.values.tolist(), row=2)
+                # Apply Formatting for new data
                 apply_formatting(ws, df)
             else:
                 print("      -> No change.")
