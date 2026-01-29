@@ -1,0 +1,31 @@
+name: Hourly Chartink Scraper
+
+on:
+  schedule:
+    # Runs at minute 0 past every hour (Cron Syntax)
+    - cron: '0 * * * *'
+  workflow_dispatch: # Allows you to run it manually from the Actions tab for testing
+
+jobs:
+  scrape-and-log:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+
+      - name: Run Scraper
+        env:
+          # We will store your JSON key in this secret
+          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: python main.py
