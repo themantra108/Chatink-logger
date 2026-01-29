@@ -15,20 +15,22 @@ SHEET_NAME = "Chartink_Multi_Log"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 def get_ist_time():
-    """Returns current time in Indian Standard Time (IST)"""
     IST = pytz.timezone('Asia/Kolkata')
     return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
 
-def clean_header_name(header):
-    """Aggressively cleans header names using Regex"""
-    # Convert to string
-    h = str(header)
-    # Regex: Find 'Sort' or '_Sort' and delete everything after it
-    # This turns 'Symbol_Sort_table_by...' into 'Symbol'
-    h = re.sub(r'[_ ]?Sort_table.*', '', h, flags=re.IGNORECASE)
-    # Remove any remaining special chars like % or .
-    h = h.strip()
-    return h
+def clean_header(col_name):
+    """
+    Aggressive cleaner:
+    Takes '45r_Sort_table_by_45r...' -> Returns '45r'
+    """
+    # 1. Force string
+    c = str(col_name)
+    # 2. Regex: Find '_Sort_table' and delete everything after it
+    c = re.split(r'_Sort_table', c, flags=re.IGNORECASE)[0]
+    # 3. Regex: Fallback for ' Sort' (space instead of underscore)
+    c = re.split(r' Sort', c, flags=re.IGNORECASE)[0]
+    # 4. Remove leftover whitespace
+    return c.strip()
 
 async def scrape_chartink():
     print("🚀 Launching browser...")
@@ -56,9 +58,9 @@ async def scrape_chartink():
                     if 'No data' in str(df.iloc[0,0]):
                         continue
 
-                    # --- AGGRESSIVE HEADER CLEANING ---
-                    new_columns = [clean_header_name(c) for c in df.columns]
-                    df.columns = new_columns
+                    # --- CLEAN HEADERS HERE ---
+                    clean_columns = [clean_header(c) for c in df.columns]
+                    df.columns = clean_columns
                     
                     df.fillna("", inplace=True)
                     df = df.astype(str)
@@ -103,17 +105,24 @@ def update_google_sheet(data_frames):
         except:
             worksheet = sh.add_worksheet(title=tab_title, rows=1000, cols=20)
 
-        # --- FIX: OVERWRITE HEADERS ---
+        # --- FORCE UPDATE HEADERS ---
+        # We explicitly clear and rewrite Row 1 to ensure it uses the Clean Headers
         expected_headers = ['Scraped_At_IST'] + new_df.columns.values.tolist()
         
-        # We blindly update Row 1 every time to ensure it matches the clean version
-        print(f"[{tab_title}] Enforcing Clean Headers...")
-        worksheet.update('A1', [expected_headers])
+        # Read current headers to see if they need updating
+        try:
+            current_headers = worksheet.row_values(1)
+        except:
+            current_headers = []
+            
+        if current_headers != expected_headers:
+            print(f"[{tab_title}] Cleaning Headers...")
+            worksheet.update('A1', [expected_headers])
 
-        # --- SMART UPDATE LOGIC ---
+        # --- DATA LOGIC ---
         first_col_name = new_df.columns[0].lower()
         
-        # A. History Table
+        # A. History Log
         if 'date' in first_col_name or 'day' in first_col_name:
             print(f"[{tab_title}] Processing History Log...")
             new_date = str(new_df.iloc[0, 0]).strip()
@@ -129,10 +138,10 @@ def update_google_sheet(data_frames):
 
             if new_date == sheet_top_date:
                 worksheet.update('A2', [row_data])
-                print(f"   -> Updated existing entry for {new_date}")
+                print(f"   -> Updated entry: {new_date}")
             else:
                 worksheet.insert_rows([row_data], row=2)
-                print(f"   -> Inserted new entry for {new_date}")
+                print(f"   -> New entry: {new_date}")
 
         # B. Stock Scanner
         else:
@@ -144,7 +153,6 @@ def update_google_sheet(data_frames):
                     break
             
             new_symbols = [str(s).strip() for s in new_df.iloc[:, target_col_idx].tolist()]
-            
             sheet_col_index = target_col_idx + 1
             existing_rows = worksheet.get_values(f"A2:Z{len(new_df) + 1}")
             existing_symbols = []
@@ -154,10 +162,10 @@ def update_google_sheet(data_frames):
                         existing_symbols.append(str(row[sheet_col_index]).strip())
 
             if new_symbols == existing_symbols:
-                print("   -> No change in stock list.")
+                print("   -> No change.")
                 continue
 
-            print("   -> Stock list changed. Appending.")
+            print("   -> Change detected. Appending.")
             timestamp = get_ist_time()
             new_df.insert(0, 'Scraped_At_IST', timestamp)
             worksheet.insert_rows(new_df.values.tolist(), row=2)
