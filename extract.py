@@ -20,7 +20,6 @@ async def get_raw_data():
             await page.goto(URL, timeout=60000)
             await page.wait_for_load_state('networkidle')
             
-            # Wait for tables to appear
             try:
                 await page.wait_for_selector("table", state="attached", timeout=15000)
             except:
@@ -29,7 +28,6 @@ async def get_raw_data():
             content = await page.content()
             dfs = pd.read_html(content)
             
-            # Basic filter: Remove empty tables or "No data" tables
             valid_dfs = []
             for df in dfs:
                 if len(df) > 1 and len(df.columns) > 1:
