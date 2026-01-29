@@ -2,5 +2,6 @@ playwright
 pandas
 gspread
 oauth2client
-lxml
 google-auth
+pytz
+lxml
