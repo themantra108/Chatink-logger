@@ -8,7 +8,6 @@ import pytz
 from playwright.async_api import async_playwright
 import gspread
 from google.oauth2.service_account import Credentials
-from gspread_dataframe import set_with_dataframe
 
 # --- CONFIGURATION ---
 URL = "https://chartink.com/dashboard/208896"
@@ -28,7 +27,7 @@ def clean_header(col_name):
     return c.strip("_ .")
 
 def calculate_year(date_val):
-    """Smart Year Logic (Jan 2026 vs Dec 2025)"""
+    """Smart Year Logic"""
     try:
         current_date = datetime.now()
         current_year = current_date.year
@@ -99,13 +98,25 @@ async def run_bot():
     timestamp = get_ist_time()
     for df in dfs:
         if len(df) > 1 and len(df.columns) > 1 and 'No data' not in str(df.iloc[0,0]):
+            
+            # A. Clean Headers
             df.columns = [clean_header(c) for c in df.columns]
-            df.fillna("", inplace=True); df = df.astype(str)
+            
+            # B. Convert Numeric Columns (The Fix)
+            # This loops through cols and forces numbers to be Real Numbers (floats/ints)
+            for col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='ignore')
+            
+            # C. Handle Empty Cells (Google Sheets hates NaN)
+            df.fillna("", inplace=True)
+            
+            # D. Add Metadata
             df.insert(0, 'Scraped_At_IST', timestamp)
             
-            # Add Year Column
+            # E. Add Year Logic
             try:
-                if any(x in str(df.iloc[0, 1]) for x in ['Jan', 'Dec', 'th', 'st']):
+                # Check 2nd column (Index 1) for Date-like strings
+                if len(df.columns) > 1 and any(x in str(df.iloc[0, 1]) for x in ['Jan', 'Dec', 'th', 'st']):
                     df['Year'] = df.iloc[:, 1].apply(calculate_year)
             except: pass
             
@@ -123,7 +134,7 @@ async def run_bot():
         try: ws = sh.worksheet(f"Table_{i+1}")
         except: ws = sh.add_worksheet(f"Table_{i+1}", 1000, 25)
         
-        ws.update('A1', [df.columns.values.tolist()]) # Force Header
+        ws.update('A1', [df.columns.values.tolist()]) 
         
         first_col = df.columns[1].lower() if len(df.columns)>1 else ""
         if 'date' in first_col or 'day' in first_col:
@@ -134,17 +145,28 @@ async def run_bot():
             for _, row in df.iterrows():
                 row_l = row.values.tolist()
                 key = str(row_l[1]).strip()
+                
+                # Check for updates (excluding timestamp)
                 if key in exist:
-                    if all_val[exist[key]-1][1:] != [str(x) for x in row_l[1:]]:
-                        ws.update(f"A{exist[key]}", [row_l])
-                else: new_rows.append(row_l)
+                    row_idx = exist[key]
+                    # Convert sheet values to string for comparison logic, but send NUMBERS to update
+                    sheet_row_str = [str(x) for x in all_val[row_idx-1][1:]]
+                    df_row_str = [str(x) for x in row_l[1:]]
+                    
+                    if sheet_row_str != df_row_str:
+                        ws.update(f"A{row_idx}", [row_l])
+                else: 
+                    new_rows.append(row_l)
+            
             if new_rows: ws.insert_rows(new_rows, 2)
             apply_formatting(ws, df)
         else:
             # Scanner Logic
-            exist_sym = [r[1] for r in ws.get_values(f"A2:B{len(df)+1}")]
-            new_sym = df.iloc[:, 1].tolist()
-            if exist_sym != new_sym:
+            target_idx = 1
+            exist_sym = [str(r[1]).strip() for r in ws.get_values(f"A2:Z{len(df)+50}")]
+            new_sym = [str(x).strip() for x in df.iloc[:, target_idx].tolist()]
+            
+            if exist_sym[:len(new_sym)] != new_sym:
                 ws.insert_rows(df.values.tolist(), 2)
                 apply_formatting(ws, df)
 
