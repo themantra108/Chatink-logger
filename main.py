@@ -19,6 +19,17 @@ def get_ist_time():
     IST = pytz.timezone('Asia/Kolkata')
     return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
 
+def clean_header_name(header):
+    """Aggressively cleans header names using Regex"""
+    # Convert to string
+    h = str(header)
+    # Regex: Find 'Sort' or '_Sort' and delete everything after it
+    # This turns 'Symbol_Sort_table_by...' into 'Symbol'
+    h = re.sub(r'[_ ]?Sort_table.*', '', h, flags=re.IGNORECASE)
+    # Remove any remaining special chars like % or .
+    h = h.strip()
+    return h
+
 async def scrape_chartink():
     print("🚀 Launching browser...")
     async with async_playwright() as p:
@@ -41,23 +52,14 @@ async def scrape_chartink():
             
             valid_dfs = []
             for df in dfs:
-                # Basic filter: Table must have data and columns
                 if len(df) > 1 and len(df.columns) > 1:
-                    # Ignore tables that are just "No data found"
                     if 'No data' in str(df.iloc[0,0]):
                         continue
 
-                    # --- CLEAN HEADERS ---
-                    # Turns "Symbol_Sort_table_by..." -> "Symbol"
-                    new_columns = []
-                    for c in df.columns:
-                        # Split by "_Sort" and take the first part
-                        clean_c = str(c).split("_Sort")[0].strip()
-                        # Remove extra spaces or dots
-                        clean_c = clean_c.replace(" ", "_").replace(".", "")
-                        new_columns.append(clean_c)
-                    
+                    # --- AGGRESSIVE HEADER CLEANING ---
+                    new_columns = [clean_header_name(c) for c in df.columns]
                     df.columns = new_columns
+                    
                     df.fillna("", inplace=True)
                     df = df.astype(str)
                     valid_dfs.append(df)
@@ -93,7 +95,6 @@ def update_google_sheet(data_frames):
         print(f"Error connecting to Sheets: {e}")
         return
 
-    # LOOP THROUGH ALL TABLES FOUND
     for i, new_df in enumerate(data_frames):
         tab_title = f"Table_{i+1}"
         
@@ -102,24 +103,17 @@ def update_google_sheet(data_frames):
         except:
             worksheet = sh.add_worksheet(title=tab_title, rows=1000, cols=20)
 
-        # --- FIX 1: FORCE HEADERS ---
-        # Construct expected header row: [Timestamp, Col1, Col2...]
+        # --- FIX: OVERWRITE HEADERS ---
         expected_headers = ['Scraped_At_IST'] + new_df.columns.values.tolist()
         
-        try:
-            current_headers = worksheet.row_values(1)
-        except:
-            current_headers = []
-            
-        # If headers are missing or wrong, overwrite them.
-        if current_headers != expected_headers:
-            print(f"[{tab_title}] Updating Headers...")
-            worksheet.update('A1', [expected_headers])
+        # We blindly update Row 1 every time to ensure it matches the clean version
+        print(f"[{tab_title}] Enforcing Clean Headers...")
+        worksheet.update('A1', [expected_headers])
 
-        # --- FIX 2: SMART UPDATE LOGIC ---
+        # --- SMART UPDATE LOGIC ---
         first_col_name = new_df.columns[0].lower()
         
-        # A. History Table (First col is Date)
+        # A. History Table
         if 'date' in first_col_name or 'day' in first_col_name:
             print(f"[{tab_title}] Processing History Log...")
             new_date = str(new_df.iloc[0, 0]).strip()
@@ -134,19 +128,15 @@ def update_google_sheet(data_frames):
             row_data = new_df.iloc[0].values.tolist()
 
             if new_date == sheet_top_date:
-                # SAME DATE -> OVERWRITE Row 2
                 worksheet.update('A2', [row_data])
                 print(f"   -> Updated existing entry for {new_date}")
             else:
-                # NEW DATE -> INSERT Row 2
                 worksheet.insert_rows([row_data], row=2)
                 print(f"   -> Inserted new entry for {new_date}")
 
-        # B. Stock Scanner (First col is Symbol)
+        # B. Stock Scanner
         else:
             print(f"[{tab_title}] Processing Stock Scanner...")
-            
-            # Find Symbol Column Index
             target_col_idx = 0
             for idx, col in enumerate(new_df.columns):
                 if 'symbol' in col.lower() or 'stock' in col.lower():
@@ -155,7 +145,6 @@ def update_google_sheet(data_frames):
             
             new_symbols = [str(s).strip() for s in new_df.iloc[:, target_col_idx].tolist()]
             
-            # Fetch Old Symbols from Sheet (Col index + 1 for timestamp offset)
             sheet_col_index = target_col_idx + 1
             existing_rows = worksheet.get_values(f"A2:Z{len(new_df) + 1}")
             existing_symbols = []
@@ -165,7 +154,7 @@ def update_google_sheet(data_frames):
                         existing_symbols.append(str(row[sheet_col_index]).strip())
 
             if new_symbols == existing_symbols:
-                print("   -> No change in stock list. Skipping.")
+                print("   -> No change in stock list.")
                 continue
 
             print("   -> Stock list changed. Appending.")
