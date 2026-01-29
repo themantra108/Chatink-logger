@@ -27,7 +27,6 @@ async def scrape_chartink():
         try:
             await page.goto(URL, timeout=60000)
             await page.wait_for_load_state('networkidle')
-            
             try:
                 await page.wait_for_selector("table", state="attached", timeout=15000)
             except:
@@ -39,10 +38,10 @@ async def scrape_chartink():
             valid_dfs = []
             for df in dfs:
                 if len(df) > 1 and len(df.columns) > 1:
-                    # --- FIX: CLEAN MESSY HEADERS ---
+                    # --- CLEAN HEADERS ---
+                    # Turns "45r_Sort_table_by..." -> "45r"
                     new_columns = []
                     for c in df.columns:
-                        # Turns "Symbol_Sort_table_by..." -> "Symbol"
                         clean_c = str(c).split("_Sort_")[0].strip()
                         clean_c = clean_c.replace(" ", "_").replace(".", "")
                         new_columns.append(clean_c)
@@ -59,20 +58,6 @@ async def scrape_chartink():
             return []
         finally:
             await browser.close()
-
-def get_symbol_column_index(df):
-    """
-    Finds the column index for 'Symbol' or 'Stock_Name'.
-    """
-    cols = [c.lower() for c in df.columns]
-    
-    # Check for 'symbol' or 'stock'
-    for i, col in enumerate(cols):
-        if 'symbol' in col or 'stock' in col:
-            return i
-            
-    # Fallback to column 0 if not found
-    return 0
 
 def update_google_sheet(data_frames):
     if not data_frames:
@@ -100,46 +85,77 @@ def update_google_sheet(data_frames):
             worksheet = sh.add_worksheet(title=tab_title, rows=1000, cols=20)
             headers = ['Scraped_At'] + new_df.columns.values.tolist()
             worksheet.append_row(headers)
-        
-        # --- LOGIC: COMPARE ONLY SYMBOLS ---
-        
-        # 1. Find where the Symbol column is in the new data
-        target_col_idx = get_symbol_column_index(new_df)
-        
-        # 2. Get the list of Symbols from the new scan
-        new_symbols = new_df.iloc[:, target_col_idx].tolist()
-        new_symbols = [str(s).strip() for s in new_symbols] # Clean whitespace
 
-        # 3. Get the list of Symbols from the existing Google Sheet
-        # Note: Sheet has 'Scraped_At' at index 0, so Symbol is shifted by +1
-        sheet_col_index = target_col_idx + 1 
+        # --- SMART LOGIC SELECTOR ---
         
-        # Get just the top rows to check for duplicates
-        existing_rows = worksheet.get_values(f"A2:Z{len(new_df) + 1}")
+        first_col_name = new_df.columns[0].lower()
         
-        existing_symbols = []
-        if existing_rows:
-            for row in existing_rows:
-                if len(row) > sheet_col_index:
-                    existing_symbols.append(str(row[sheet_col_index]).strip())
-                else:
-                    existing_symbols.append("")
-
-        # 4. The Decision: Are the lists identical?
-        if new_symbols == existing_symbols:
-            print(f"[{tab_title}] Symbols are unchanged. Skipping save.")
-            continue
+        # LOGIC A: HISTORY TABLE (First column is 'date' or similar)
+        if 'date' in first_col_name or 'day' in first_col_name:
+            print(f"[{tab_title}] Detected History Table (by Date).")
             
-        # --- SAVE IF DIFFERENT ---
-        print(f"[{tab_title}] CHANGE DETECTED (New stocks or order changed). Saving...")
-        
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        new_df.insert(0, 'Scraped_At', timestamp)
-        
-        values = new_df.values.tolist()
-        if values:
-            worksheet.insert_rows(values, row=2)
-            print(f"[{tab_title}] Successfully logged {len(values)} rows.")
+            # Get the Date from the new scan (Top Row)
+            new_date = str(new_df.iloc[0, 0]).strip()
+            
+            # Get the Date from the Sheet (Row 2, Column B because Col A is Timestamp)
+            try:
+                # A2 is timestamp, B2 is the Date column
+                sheet_top_date = worksheet.acell('B2').value
+            except:
+                sheet_top_date = ""
+
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            new_df.insert(0, 'Scraped_At', timestamp)
+            row_data = new_df.iloc[0].values.tolist() # Get just the top row
+
+            if new_date == sheet_top_date:
+                # SAME DATE -> OVERWRITE (UPDATE)
+                # This keeps data "Real Time" without adding rows
+                print(f"[{tab_title}] Date ({new_date}) exists. Updating stats in place...")
+                
+                # Update Row 2 (A2:Z2)
+                cell_list = worksheet.range(f"A2:Z2")
+                for i, cell in enumerate(cell_list):
+                    if i < len(row_data):
+                        cell.value = row_data[i]
+                worksheet.update_cells(cell_list)
+                
+            else:
+                # NEW DATE -> INSERT (APPEND)
+                print(f"[{tab_title}] New Date ({new_date}) detected. Inserting new row.")
+                worksheet.insert_rows([row_data], row=2)
+
+        # LOGIC B: STOCK SCANNER (First column is Symbol)
+        else:
+            print(f"[{tab_title}] Detected Stock Scanner.")
+            
+            # Identify Symbol Column
+            target_col_idx = 0
+            for idx, col in enumerate(new_df.columns):
+                if 'symbol' in col.lower() or 'stock' in col.lower():
+                    target_col_idx = idx
+                    break
+            
+            # Extract Symbols
+            new_symbols = [str(s).strip() for s in new_df.iloc[:, target_col_idx].tolist()]
+            
+            # Fetch Old Symbols
+            sheet_col_index = target_col_idx + 1
+            existing_rows = worksheet.get_values(f"A2:Z{len(new_df) + 1}")
+            existing_symbols = []
+            if existing_rows:
+                for row in existing_rows:
+                    if len(row) > sheet_col_index:
+                        existing_symbols.append(str(row[sheet_col_index]).strip())
+
+            if new_symbols == existing_symbols:
+                print(f"[{tab_title}] Stock list unchanged. Skipping.")
+                continue
+
+            print(f"[{tab_title}] Stock list changed. Appending...")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            new_df.insert(0, 'Scraped_At', timestamp)
+            worksheet.insert_rows(new_df.values.tolist(), row=2)
 
 if __name__ == "__main__":
     data = asyncio.run(scrape_chartink())
