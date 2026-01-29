@@ -1,14 +1,17 @@
-name: High Frequency Chartink Scraper
+name: 5-Min Chartink Scraper
 
 on:
   schedule:
-    # '*/5' means "Every 5 minutes" (GitHub's fastest allowed speed)
+    # Runs every 5 minutes (Fastest allowed on GitHub Free)
     - cron: '*/5 * * * *'
-  workflow_dispatch: # Allows manual trigger
+  workflow_dispatch: # Allows you to click "Run Now" manually for testing
 
 jobs:
   scrape-and-log:
     runs-on: ubuntu-latest
+    
+    # 15 minute timeout ensures if script hangs it doesn't waste your free minutes
+    timeout-minutes: 15 
 
     steps:
       - name: Checkout code
@@ -23,8 +26,10 @@ jobs:
         run: |
           pip install -r requirements.txt
           playwright install chromium
+          playwright install-deps
 
-      - name: Run Scraper
+      - name: Run Scraper Script
         env:
+          # This pulls your Secret JSON key from GitHub Settings
           GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
         run: python main.py
