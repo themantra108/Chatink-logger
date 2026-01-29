@@ -18,7 +18,7 @@ def clean_header_name(col_name):
 
 def calculate_year(date_val):
     """
-    Lookback Year Logic:
+    Smart Year Logic:
     If today is Jan 2026, and row says '29th Dec', it treats it as 2025.
     """
     try:
@@ -29,7 +29,7 @@ def calculate_year(date_val):
         s = str(date_val).strip()
         clean_d = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', s)
         
-        # Parse date
+        # Parse date with current year temp
         dt = datetime.strptime(f"{clean_d} {current_year}", "%d %b %Y")
         
         # Logic: If Current Month is Jan (1) and Data Month is Dec (12), subtract 1 year
@@ -40,7 +40,7 @@ def calculate_year(date_val):
         return datetime.now().year
 
 def process_data(raw_dfs):
-    print("2. [TRANSFORM] Cleaning & Adding Year...")
+    print("2. [TRANSFORM] Cleaning data & Adding Year...")
     if not raw_dfs:
         return []
 
@@ -58,14 +58,16 @@ def process_data(raw_dfs):
         # 3. Add Timestamp (First Column)
         df.insert(0, 'Scraped_At_IST', timestamp)
         
-        # 4. Add Year Column (FORCE LOGIC)
-        # We assume the Date is always the 2nd column (Index 1) after Timestamp
+        # 4. Add Year Column (Last Column) based on 2nd Column (Index 1)
+        # We assume the data key (Date/Symbol) is always at Index 1
         try:
-            # Apply logic to the column at index 1 (The Date Column)
-            year_values = df.iloc[:, 1].apply(calculate_year)
-            df['Year'] = year_values
-        except Exception as e:
-            print(f"   ⚠️ Year calculation failed: {e}")
+            # We only apply year logic if the column looks like a Date
+            sample_val = str(df.iloc[0, 1])
+            if any(x in sample_val for x in ['Jan', 'Feb', 'Dec', 'th', 'st']):
+                year_values = df.iloc[:, 1].apply(calculate_year)
+                df['Year'] = year_values
+        except:
+            pass
 
         clean_dfs.append(df)
 
