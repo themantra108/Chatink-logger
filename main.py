@@ -9,7 +9,7 @@ from google.oauth2.service_account import Credentials
 
 # --- CONFIGURATION ---
 URL = "https://chartink.com/dashboard/208896"
-SHEET_NAME = "Chartink Smart Log" # Make sure you create this Sheet & Share it with your Service Account Email!
+SHEET_NAME = "Chartink Smart Log"
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
@@ -18,7 +18,6 @@ SCOPES = [
 async def scrape_chartink():
     print("Launching browser...")
     async with async_playwright() as p:
-        # Launch browser in headless mode
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
@@ -26,34 +25,33 @@ async def scrape_chartink():
         page = await context.new_page()
         
         try:
-            # 1. Load the page
-            print(f"Visiting {URL}...")
             await page.goto(URL, timeout=60000)
             await page.wait_for_load_state('networkidle')
             
-            # 2. Wait for tables to render
             try:
                 await page.wait_for_selector("table", state="attached", timeout=15000)
             except:
-                print("Warning: Wait for table timed out, attempting to parse HTML anyway...")
+                pass
 
-            # 3. Extract HTML and Parse with Pandas
             content = await page.content()
             dfs = pd.read_html(content)
             
             valid_dfs = []
             for df in dfs:
-                # Filter out empty/layout tables
                 if len(df) > 1 and len(df.columns) > 1:
-                    # Clean headers (remove spaces/dots for cleaner Sheet headers)
-                    df.columns = [str(c).replace(" ", "_").replace(".", "") for c in df.columns]
-                    # Fill NaN to avoid errors
+                    # --- FIX: AGGRESSIVE HEADER CLEANING ---
+                    # Chartink puts sorting text in headers. We split by '_Sort_' and keep the first part.
+                    new_columns = []
+                    for c in df.columns:
+                        clean_c = str(c).split("_Sort_")[0].strip() # Removes "Sort_table_by..."
+                        clean_c = clean_c.replace(" ", "_").replace(".", "")
+                        new_columns.append(clean_c)
+                    
+                    df.columns = new_columns
                     df.fillna("", inplace=True)
-                    # Convert to string to ensure consistent comparison
                     df = df.astype(str)
                     valid_dfs.append(df)
             
-            print(f"Extracted {len(valid_dfs)} valid tables.")
             return valid_dfs
 
         except Exception as e:
@@ -62,82 +60,27 @@ async def scrape_chartink():
         finally:
             await browser.close()
 
+def get_comparison_column_index(df):
+    """
+    Finds the index of the Symbol column to ensure we only compare Symbols, not prices.
+    """
+    cols = [c.lower() for c in df.columns]
+    
+    # Priority 1: Look for 'symbol' or 'stock'
+    for i, col in enumerate(cols):
+        if 'symbol' in col or 'stock' in col:
+            return i
+            
+    # Priority 2: Fallback to column 0 (usually the stock name in Chartink)
+    return 0
+
 def update_google_sheet(data_frames):
     if not data_frames:
-        print("No data extracted. Exiting.")
         return
 
-    # 1. Authenticate using GitHub Secret
     if 'GCP_SERVICE_ACCOUNT' not in os.environ:
-        print("Error: GCP_SERVICE_ACCOUNT secret not found.")
+        print("Error: GCP_SERVICE_ACCOUNT secret missing.")
         return
 
     try:
-        json_creds = json.loads(os.environ['GCP_SERVICE_ACCOUNT'])
-        creds = Credentials.from_service_account_info(json_creds, scopes=SCOPES)
-        client = gspread.authorize(creds)
-        sh = client.open(SHEET_NAME)
-    except Exception as e:
-        print(f"Error connecting to Google Sheets: {e}")
-        print("Check: 1. Did you share the sheet with the client_email? 2. Is the Sheet Name correct?")
-        return
-
-    # 2. Process each table
-    for i, new_df in enumerate(data_frames):
-        tab_title = f"Scan_Results_{i+1}"
-        
-        try:
-            worksheet = sh.worksheet(tab_title)
-        except:
-            # Create new worksheet if it doesn't exist
-            worksheet = sh.add_worksheet(title=tab_title, rows=1000, cols=20)
-            # Add headers with 'Scraped_At' as the first column
-            headers = ['Scraped_At'] + new_df.columns.values.tolist()
-            worksheet.append_row(headers)
-            print(f"Created new tab: {tab_title}")
-
-        # --- SMART DUPLICATE CHECK ---
-        
-        # A. Fetch existing data from top of sheet to compare
-        # We assume data starts at Row 2. We fetch enough rows to cover the new dataframe size.
-        # We need +1 because row 1 is header.
-        num_rows_to_check = len(new_df)
-        existing_data_range = worksheet.get_values(f"A2:Z{num_rows_to_check + 1}")
-        
-        # B. Clean existing data for comparison (Remove the first column which is Timestamp)
-        existing_data_clean = []
-        if existing_data_range:
-            for row in existing_data_range:
-                # Slice [1:] removes the timestamp at index 0
-                if len(row) > 1:
-                    existing_data_clean.append(row[1:])
-                else:
-                    existing_data_clean.append([]) # Handle empty rows if any
-
-        # C. Prepare new data as list of lists
-        new_data_list = new_df.values.tolist()
-
-        # D. Compare: If lists are identical, STOP.
-        # Note: This checks if the market data is exactly the same as the last entry.
-        if existing_data_clean == new_data_list:
-            print(f"[{tab_title}] Data unchanged. Skipping update.")
-            continue
-        
-        # --- SAVE NEW DATA ---
-        
-        print(f"[{tab_title}] CHANGE DETECTED. saving...")
-        
-        # Add Timestamp to the new data
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        new_df.insert(0, 'Scraped_At', timestamp)
-        
-        # Insert rows at index 2 (pushes old data down)
-        values_to_write = new_df.values.tolist()
-        if values_to_write:
-            worksheet.insert_rows(values_to_write, row=2)
-            print(f"[{tab_title}] Success: Inserted {len(values_to_write)} rows at top.")
-
-if __name__ == "__main__":
-    # Asyncio entry point
-    data = asyncio.run(scrape_chartink())
-    update_google_sheet(data)
+        json_creds = json.loads(os.
