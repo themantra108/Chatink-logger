@@ -19,17 +19,10 @@ def get_ist_time():
     return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
 
 def clean_header(col_name):
-    """
-    Aggressive cleaner:
-    Takes '45r_Sort_table_by_45r...' -> Returns '45r'
-    """
-    # 1. Force string
+    """Aggressive Header Cleaner"""
     c = str(col_name)
-    # 2. Regex: Find '_Sort_table' and delete everything after it
     c = re.split(r'_Sort_table', c, flags=re.IGNORECASE)[0]
-    # 3. Regex: Fallback for ' Sort' (space instead of underscore)
     c = re.split(r' Sort', c, flags=re.IGNORECASE)[0]
-    # 4. Remove leftover whitespace
     return c.strip()
 
 async def scrape_chartink():
@@ -58,10 +51,9 @@ async def scrape_chartink():
                     if 'No data' in str(df.iloc[0,0]):
                         continue
 
-                    # --- CLEAN HEADERS HERE ---
+                    # Clean Headers
                     clean_columns = [clean_header(c) for c in df.columns]
                     df.columns = clean_columns
-                    
                     df.fillna("", inplace=True)
                     df = df.astype(str)
                     valid_dfs.append(df)
@@ -97,6 +89,8 @@ def update_google_sheet(data_frames):
         print(f"Error connecting to Sheets: {e}")
         return
 
+    timestamp = get_ist_time()
+
     for i, new_df in enumerate(data_frames):
         tab_title = f"Table_{i+1}"
         
@@ -105,46 +99,77 @@ def update_google_sheet(data_frames):
         except:
             worksheet = sh.add_worksheet(title=tab_title, rows=1000, cols=20)
 
-        # --- FORCE UPDATE HEADERS ---
-        # We explicitly clear and rewrite Row 1 to ensure it uses the Clean Headers
+        # --- HEADERS ---
         expected_headers = ['Scraped_At_IST'] + new_df.columns.values.tolist()
-        
-        # Read current headers to see if they need updating
         try:
             current_headers = worksheet.row_values(1)
         except:
             current_headers = []
-            
+        
         if current_headers != expected_headers:
-            print(f"[{tab_title}] Cleaning Headers...")
+            print(f"[{tab_title}] Fixing Headers...")
             worksheet.update('A1', [expected_headers])
 
-        # --- DATA LOGIC ---
+        # --- FULL SYNC LOGIC ---
         first_col_name = new_df.columns[0].lower()
         
-        # A. History Log
-        if 'date' in first_col_name or 'day' in first_col_name:
-            print(f"[{tab_title}] Processing History Log...")
-            new_date = str(new_df.iloc[0, 0]).strip()
+        # Determine if this is a History Table (Date-based) or Scanner (Symbol-based)
+        is_history_table = 'date' in first_col_name or 'day' in first_col_name
+        
+        if is_history_table:
+            print(f"[{tab_title}] performing FULL SYNC (History Mode)...")
             
-            try:
-                sheet_top_date = worksheet.acell('B2').value
-            except:
-                sheet_top_date = ""
+            # 1. Fetch ALL existing data to find matches
+            # We map { "DateString": RowIndex }
+            # Note: Sheet has headers at Row 1. Data starts at Row 2.
+            # Col A is Timestamp, Col B is Date.
+            
+            all_values = worksheet.get_all_values()
+            existing_map = {}
+            
+            # Build map from existing sheet data
+            if len(all_values) > 1:
+                for idx, row in enumerate(all_values):
+                    if idx == 0: continue # Skip header
+                    if len(row) > 1:
+                        date_val = str(row[1]).strip() # Col B is Date
+                        existing_map[date_val] = idx + 1 # Store 1-based row index
+            
+            rows_to_insert = []
+            
+            # 2. Iterate through EVERY row in scraped data
+            for index, row in new_df.iterrows():
+                row_list = row.values.tolist()
+                date_key = str(row_list[0]).strip() # Date is first col in DF
+                
+                full_row_data = [timestamp] + row_list
+                
+                if date_key in existing_map:
+                    # IT EXISTS -> CHECK FOR CHANGES
+                    row_idx = existing_map[date_key]
+                    current_sheet_row = all_values[row_idx - 1]
+                    
+                    # Compare Data (ignoring timestamp at index 0)
+                    # We compare current_sheet_row[1:] vs row_list
+                    # (Slice carefully to handle length diffs)
+                    existing_data_part = current_sheet_row[1:] if len(current_sheet_row) > 1 else []
+                    
+                    if existing_data_part != row_list:
+                        print(f"   -> Adjustment detected for {date_key}. Updating Row {row_idx}.")
+                        # Update the specific row
+                        worksheet.update(f"A{row_idx}", [full_row_data])
+                else:
+                    # IT IS NEW -> ADD TO INSERT LIST
+                    print(f"   -> New missing date found: {date_key}")
+                    rows_to_insert.append(full_row_data)
+            
+            # 3. Batch Insert New Rows (if any)
+            if rows_to_insert:
+                print(f"   -> Inserting {len(rows_to_insert)} new rows...")
+                worksheet.insert_rows(rows_to_insert, row=2)
 
-            timestamp = get_ist_time()
-            new_df.insert(0, 'Scraped_At_IST', timestamp)
-            row_data = new_df.iloc[0].values.tolist()
-
-            if new_date == sheet_top_date:
-                worksheet.update('A2', [row_data])
-                print(f"   -> Updated entry: {new_date}")
-            else:
-                worksheet.insert_rows([row_data], row=2)
-                print(f"   -> New entry: {new_date}")
-
-        # B. Stock Scanner
         else:
+            # STOCK SCANNER LOGIC (Append-Only Logic)
             print(f"[{tab_title}] Processing Stock Scanner...")
             target_col_idx = 0
             for idx, col in enumerate(new_df.columns):
@@ -163,12 +188,10 @@ def update_google_sheet(data_frames):
 
             if new_symbols == existing_symbols:
                 print("   -> No change.")
-                continue
-
-            print("   -> Change detected. Appending.")
-            timestamp = get_ist_time()
-            new_df.insert(0, 'Scraped_At_IST', timestamp)
-            worksheet.insert_rows(new_df.values.tolist(), row=2)
+            else:
+                print("   -> Change detected. Appending.")
+                new_df.insert(0, 'Scraped_At_IST', timestamp)
+                worksheet.insert_rows(new_df.values.tolist(), row=2)
 
 if __name__ == "__main__":
     data = asyncio.run(scrape_chartink())
