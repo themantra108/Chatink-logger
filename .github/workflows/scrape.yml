@@ -2,21 +2,31 @@ name: Chartink Auto-Log
 
 on:
   schedule:
-    - cron: '*/5 * * * *' # Every 5 minutes
-  workflow_dispatch:
+    - cron: '*/5 * * * *' # Runs every 5 minutes
+  workflow_dispatch:      # Allows manual run button
 
 jobs:
   scrape-job:
     runs-on: ubuntu-latest
+    
+    # Timeout prevents stuck jobs eating your free minutes
+    timeout-minutes: 15
+
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-      - run: |
+
+      - name: Install Dependencies
+        run: |
           pip install -r requirements.txt
           playwright install chromium
           playwright install-deps
-      - env:
+
+      - name: Run Scraper
+        env:
           GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
         run: python main.py
