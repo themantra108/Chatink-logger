@@ -17,11 +17,15 @@ SCOPES = [
 ]
 
 def get_ist_time():
+    """Returns current time in Indian Standard Time."""
     IST = pytz.timezone('Asia/Kolkata')
     return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
 
-async def scrape_chartink():
-    print("Launching browser...")
+# ==========================================
+# 1. THE SCRAPER (Fetches Raw Data)
+# ==========================================
+async def fetch_raw_html(url):
+    print("Step 1: Launching Scraper...")
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
@@ -30,43 +34,74 @@ async def scrape_chartink():
         page = await context.new_page()
         
         try:
-            await page.goto(URL, timeout=60000)
+            print(f"Visiting {url}...")
+            await page.goto(url, timeout=60000)
             await page.wait_for_load_state('networkidle')
+            
+            # Wait specifically for tables to appear
             try:
                 await page.wait_for_selector("table", state="attached", timeout=15000)
             except:
-                pass
+                print("Warning: Timeout waiting for table selector.")
 
-            content = await page.content()
-            dfs = pd.read_html(content)
-            
-            valid_dfs = []
-            for df in dfs:
-                if len(df) > 1 and len(df.columns) > 1:
-                    # Clean Headers
-                    new_columns = []
-                    for c in df.columns:
-                        clean_c = str(c).split("_Sort_")[0].strip()
-                        clean_c = clean_c.replace(" ", "_").replace(".", "")
-                        new_columns.append(clean_c)
-                    
-                    df.columns = new_columns
-                    df.fillna("", inplace=True)
-                    df = df.astype(str)
-                    valid_dfs.append(df)
-            
-            return valid_dfs
+            # Extract the raw HTML string
+            html_content = await page.content()
+            return html_content
 
         except Exception as e:
-            print(f"Error during scraping: {e}")
-            return []
+            print(f"Scraper Error: {e}")
+            return None
         finally:
             await browser.close()
 
-def update_google_sheet(data_frames):
+# ==========================================
+# 2. THE CLEANER (Process & Format Data)
+# ==========================================
+def process_and_clean_data(html_content):
+    print("Step 2: Cleaning Data...")
+    if not html_content:
+        return []
+
+    try:
+        # Parse HTML into List of DataFrames
+        dfs = pd.read_html(html_content)
+    except ValueError:
+        print("No tables found in HTML.")
+        return []
+
+    cleaned_dfs = []
+    
+    for df in dfs:
+        # Basic Validation: Ignore empty or tiny tables
+        if len(df) > 1 and len(df.columns) > 1:
+            
+            # A. Clean Headers (Remove 'Sort_table' junk)
+            new_columns = []
+            for c in df.columns:
+                clean_c = str(c).split("_Sort_")[0].strip()
+                clean_c = clean_c.replace(" ", "_").replace(".", "")
+                new_columns.append(clean_c)
+            df.columns = new_columns
+            
+            # B. Standardize Data
+            df.fillna("", inplace=True) # Remove NaNs
+            df = df.astype(str)         # Ensure all data is string for easy comparison
+            
+            cleaned_dfs.append(df)
+            
+    print(f"Cleaned {len(cleaned_dfs)} valid tables.")
+    return cleaned_dfs
+
+# ==========================================
+# 3. THE LOADER (Google Sheets Logic)
+# ==========================================
+def sync_to_google_sheets(data_frames):
+    print("Step 3: Syncing with Google Sheets...")
     if not data_frames:
+        print("No data to sync.")
         return
 
+    # Authenticate
     if 'GCP_SERVICE_ACCOUNT' not in os.environ:
         print("Error: GCP_SERVICE_ACCOUNT secret missing.")
         return
@@ -77,9 +112,10 @@ def update_google_sheet(data_frames):
         client = gspread.authorize(creds)
         sh = client.open(SHEET_NAME)
     except Exception as e:
-        print(f"Error connecting to Sheets: {e}")
+        print(f"Google Sheets Connection Error: {e}")
         return
 
+    # Process each table
     for i, new_df in enumerate(data_frames):
         tab_title = f"Scan_Results_{i+1}"
         
@@ -88,93 +124,83 @@ def update_google_sheet(data_frames):
         except:
             worksheet = sh.add_worksheet(title=tab_title, rows=1000, cols=20)
 
-        # --- FIX 1: FORCE HEADERS ---
-        # We read the first row. If it's empty OR doesn't match the new dataframe, we write headers.
+        # --- A. HEADER CHECK ---
+        # Ensure headers exist and are correct
         current_headers = worksheet.row_values(1)
         expected_cols = new_df.columns.values.tolist()
         
-        # Check if headers need writing (A1 should be 'Scraped_At_IST')
+        # If headers missing or mismatch, force write them
         if not current_headers or current_headers[0] != 'Scraped_At_IST':
-            print(f"[{tab_title}] Headers missing or incorrect. Writing now...")
+            print(f"[{tab_title}] Writing Headers...")
             full_header = ['Scraped_At_IST'] + expected_cols
             worksheet.update('A1', [full_header])
 
-        # --- FIX 2: FULL SYNC (Upsert Logic) ---
+        # --- B. FULL HISTORY SYNC (Adjust past data) ---
         
-        # 1. Read all existing data to map Key -> Row Index
-        # We need this to find "Past Dates" quickly.
+        # 1. Map existing sheet data { "Key": Row_Index }
         all_values = worksheet.get_all_values()
-        
-        # Create a map: { "Unique_ID_Value": Row_Index }
-        # We assume Row 1 is header, so data starts at Row 2 (index 1 in python list)
         existing_row_map = {}
         
-        # Identify which column is the Unique Key (Date or Symbol)
-        key_col_idx = 0 # Default to first column of data (which is Col B in sheet)
-        first_col_name = new_df.columns[0].lower()
-        
-        # Determine Key Column Index relative to the SHEET (Col A=0, B=1, etc.)
-        # Sheet Col 0 is 'Scraped_At_IST', Sheet Col 1 is the first data column.
+        # Determine which column is the Unique Key (Symbol or Date)
+        # Sheet Col 1 (B) is usually the key (Col A is Timestamp)
         sheet_key_col_idx = 1 
+        
+        # Heuristic: If it looks like a stock scanner, find the symbol column
+        first_col_name = new_df.columns[0].lower()
         if 'symbol' in first_col_name or 'stock' in first_col_name:
-            # If it's a stock scanner, find the symbol column index
             for idx, col in enumerate(new_df.columns):
                 if 'symbol' in col.lower() or 'stock' in col.lower():
-                    sheet_key_col_idx = idx + 1 # +1 because of Scraped_At
+                    sheet_key_col_idx = idx + 1 # +1 offset for timestamp
                     break
         
-        # Build the map
+        # Build Map
         if len(all_values) > 1:
             for row_idx, row in enumerate(all_values):
                 if row_idx == 0: continue # Skip header
                 if len(row) > sheet_key_col_idx:
-                    key_value = str(row[sheet_key_col_idx]).strip()
-                    existing_row_map[key_value] = row_idx + 1 # Store 1-based Row ID for gspread
+                    key_val = str(row[sheet_key_col_idx]).strip()
+                    existing_row_map[key_val] = row_idx + 1 # Save 1-based index
 
-        # 2. Iterate through New Data
+        # 2. Compare New Data vs Old Data
         rows_to_insert = []
-        
         timestamp = get_ist_time()
         
         for _, row_series in new_df.iterrows():
             new_row_data = row_series.values.tolist()
-            key_val = str(new_row_data[sheet_key_col_idx - 1]).strip() # Key in DataFrame
+            # Key in DataFrame (no offset needed here)
+            key_val = str(new_row_data[sheet_key_col_idx - 1]).strip()
             
-            # Prepare the full row for sheet (Timestamp + Data)
             full_row_to_write = [timestamp] + new_row_data
             
-            # CHECK: Does this Key exist in the sheet?
             if key_val in existing_row_map:
-                # IT EXISTS -> CHECK FOR CHANGES
+                # Key exists -> Check for changes (Adjustments)
                 row_number = existing_row_map[key_val]
-                
-                # Fetch current data from sheet to compare
-                # (Optimization: We technically have it in 'all_values' variable)
                 current_sheet_row = all_values[row_number - 1]
                 
-                # Compare Data (ignoring timestamp at index 0)
-                # current_sheet_row[1:] compares against new_row_data
-                # We handle potential length mismatches safely
+                # Compare data only (ignore timestamp at index 0)
                 current_data_only = current_sheet_row[1:] if len(current_sheet_row) > 1 else []
                 
-                # Strict comparison
                 if current_data_only != new_row_data:
-                    print(f"[{tab_title}] Adjustment detected for {key_val}. Updating Row {row_number}.")
-                    # Update the specific row
-                    # Gspread range: A{row}:Z{row}
+                    print(f"[{tab_title}] Updating changed data for: {key_val}")
                     worksheet.update(f"A{row_number}", [full_row_to_write])
-                # Else: Data is same, do nothing.
-                
             else:
-                # IT DOES NOT EXIST -> INSERT
-                # We collect these to insert them all at once at the top (Row 2)
+                # Key is new -> Add to insert list
                 rows_to_insert.append(full_row_to_write)
         
-        # 3. Batch Insert New Rows (if any)
+        # 3. Batch Insert New Rows
         if rows_to_insert:
-            print(f"[{tab_title}] Found {len(rows_to_insert)} new entries. Inserting at top.")
+            print(f"[{tab_title}] Inserting {len(rows_to_insert)} new rows.")
             worksheet.insert_rows(rows_to_insert, row=2)
 
+# ==========================================
+# MAIN EXECUTION FLOW
+# ==========================================
 if __name__ == "__main__":
-    data = asyncio.run(scrape_chartink())
-    update_google_sheet(data)
+    # 1. Scrape
+    raw_html = asyncio.run(fetch_raw_html(URL))
+    
+    # 2. Clean
+    clean_data = process_and_clean_data(raw_html)
+    
+    # 3. Load
+    sync_to_google_sheets(clean_data)
