@@ -1,206 +1,150 @@
-import asyncio
-import os
-import json
+import asyncio, os, json, re
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from playwright.async_api import async_playwright
 import gspread
 from google.oauth2.service_account import Credentials
+from gspread_dataframe import set_with_dataframe, get_as_dataframe
 
 # --- CONFIGURATION ---
-URL = "https://chartink.com/dashboard/208896"
-SHEET_NAME = "Chartink Smart Log"
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
+URL = "https://chartink.com/dashboard/208896" 
+SHEET_NAME = "Chartink_Multi_Table_Log" # Changed name to avoid conflicts
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
+# --- HELPERS ---
 def get_ist_time():
-    """Returns current time in Indian Standard Time."""
-    IST = pytz.timezone('Asia/Kolkata')
-    return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(pytz.timezone('Asia/Kolkata')).strftime("%Y-%m-%d %H:%M:%S")
 
-# ==========================================
-# 1. THE SCRAPER (Fetches Raw Data)
-# ==========================================
-async def fetch_raw_html(url):
-    print("Step 1: Launching Scraper...")
+def clean_date(x):
+    """Converts '29th Jan' -> Date Object for sorting"""
+    try:
+        dt = datetime.strptime(f"{re.sub(r'(\d+)(st|nd|rd|th)', r'\1', str(x).strip())} {datetime.now().year}", "%d %b %Y")
+        return dt.replace(year=dt.year-1) if dt > datetime.now() + timedelta(days=30) else dt
+    except: return pd.NaT
+
+def calc_score(row):
+    """Calculates Trend Score"""
+    s = 0
+    rules = {'4.5r':(50,200), '20r':(50,75), '50r':(60,85), '4.5chg':(-20,20), '20chg':(-20,20), '50chg':(-20,20)}
+    for col, (low, high) in rules.items():
+        if col in row:
+            try: 
+                v = float(str(row[col]).replace(',','').replace('%',''))
+                s += (1 if v > high else 0) - (1 if v < low else 0)
+            except: pass
+    return s
+
+# --- CORE ---
+async def fetch_all_tables():
+    print("🚀 Scraping all tables...")
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        )
-        page = await context.new_page()
-        
+        page = await browser.new_page()
         try:
-            print(f"Visiting {url}...")
-            await page.goto(url, timeout=60000)
-            await page.wait_for_load_state('networkidle')
+            await page.goto(URL, timeout=60000); await page.wait_for_load_state('networkidle')
+            try: await page.wait_for_selector("table", state="attached", timeout=15000)
+            except: pass
             
-            # Wait specifically for tables to appear
-            try:
-                await page.wait_for_selector("table", state="attached", timeout=15000)
-            except:
-                print("Warning: Timeout waiting for table selector.")
+            # Read ALL tables
+            dfs = pd.read_html(await page.content())
+            if not dfs: return []
+            
+            clean_dfs = []
+            for df in dfs:
+                # Filter out tiny/empty layout tables
+                if len(df) > 1 and len(df.columns) > 1:
+                    df = df.dropna(how='all').astype(str)
+                    # Clean Headers
+                    df.columns = [str(c).split(" Sort")[0].split("_Sort")[0].strip().replace(" ", "") for c in df.columns]
+                    # Filter 'No data' rows
+                    df = df[~df[df.columns[0]].str.contains('No data', na=False, case=False)]
+                    if not df.empty:
+                        clean_dfs.append(df)
+            
+            print(f"✅ Found {len(clean_dfs)} valid tables.")
+            return clean_dfs
+            
+        except Exception as e: print(f"❌ Error: {e}"); return []
+        finally: await browser.close()
 
-            # Extract the raw HTML string
-            html_content = await page.content()
-            return html_content
-
-        except Exception as e:
-            print(f"Scraper Error: {e}")
-            return None
-        finally:
-            await browser.close()
-
-# ==========================================
-# 2. THE CLEANER (Process & Format Data)
-# ==========================================
-def process_and_clean_data(html_content):
-    print("Step 2: Cleaning Data...")
-    if not html_content:
-        return []
-
-    try:
-        # Parse HTML into List of DataFrames
-        dfs = pd.read_html(html_content)
-    except ValueError:
-        print("No tables found in HTML.")
-        return []
-
-    cleaned_dfs = []
+def main():
+    # 1. Auth
+    if 'GCP_SERVICE_ACCOUNT' not in os.environ: return print("❌ Missing Keys")
+    creds = Credentials.from_service_account_info(json.loads(os.environ['GCP_SERVICE_ACCOUNT']), scopes=SCOPES)
+    gc = gspread.authorize(creds)
     
-    for df in dfs:
-        # Basic Validation: Ignore empty or tiny tables
-        if len(df) > 1 and len(df.columns) > 1:
+    try: sh = gc.open(SHEET_NAME)
+    except: 
+        print("Creating new spreadsheet...")
+        sh = gc.create(SHEET_NAME)
+        sh.share(json.loads(os.environ['GCP_SERVICE_ACCOUNT'])['client_email'], perm_type='user', role='owner')
+
+    # 2. Get Data (List of DataFrames)
+    new_dfs = asyncio.run(fetch_all_tables())
+    if not new_dfs: return
+
+    # 3. Loop through EACH table and update corresponding Tab
+    for i, new_df in enumerate(new_dfs):
+        tab_name = f"Table_{i+1}"
+        print(f"Processing {tab_name}...")
+        
+        try: ws = sh.worksheet(tab_name)
+        except: ws = sh.add_worksheet(title=tab_name, rows=1000, cols=20)
+
+        # Merge Logic (Per Table)
+        try: old_df = get_as_dataframe(ws).dropna(how='all')
+        except: old_df = pd.DataFrame()
+
+        # Check table type (History vs Stocks)
+        key_col = new_df.columns[0]
+        is_history = 'date' in key_col.lower() or 'day' in key_col.lower()
+
+        if is_history:
+            # HISTORY TABLE LOGIC
+            new_df['__dt__'] = new_df[key_col].apply(clean_date)
+            if not old_df.empty and key_col in old_df.columns: 
+                old_df['__dt__'] = old_df[key_col].apply(clean_date)
             
-            # A. Clean Headers (Remove 'Sort_table' junk)
-            new_columns = []
-            for c in df.columns:
-                clean_c = str(c).split("_Sort_")[0].strip()
-                clean_c = clean_c.replace(" ", "_").replace(".", "")
-                new_columns.append(clean_c)
-            df.columns = new_columns
-            
-            # B. Standardize Data
-            df.fillna("", inplace=True) # Remove NaNs
-            df = df.astype(str)         # Ensure all data is string for easy comparison
-            
-            cleaned_dfs.append(df)
-            
-    print(f"Cleaned {len(cleaned_dfs)} valid tables.")
-    return cleaned_dfs
+            full_df = pd.concat([new_df, old_df]) if not old_df.empty else new_df
+            full_df = full_df.sort_values('__dt__', ascending=False)
+        else:
+            # STOCK SCANNER LOGIC
+            full_df = new_df
+            full_df.insert(0, 'Scraped_At_IST', get_ist_time())
 
-# ==========================================
-# 3. THE LOADER (Google Sheets Logic)
-# ==========================================
-def sync_to_google_sheets(data_frames):
-    print("Step 3: Syncing with Google Sheets...")
-    if not data_frames:
-        print("No data to sync.")
-        return
+        # Deduplicate
+        cols_to_check = [c for c in full_df.columns if c not in ['__dt__', 'Scraped_At_IST']]
+        full_df = full_df.drop_duplicates(subset=cols_to_check, keep='first')
 
-    # Authenticate
-    if 'GCP_SERVICE_ACCOUNT' not in os.environ:
-        print("Error: GCP_SERVICE_ACCOUNT secret missing.")
-        return
+        # Score & Upload
+        full_df['__score__'] = full_df.apply(calc_score, axis=1)
+        final_df = full_df.drop(columns=['__dt__', '__score__'], errors='ignore')
+        
+        ws.clear()
+        set_with_dataframe(ws, final_df, include_column_header=True)
+        
+        # 4. Apply Formatting (Per Tab)
+        print(f"   -> Formatting {tab_name}...")
+        reqs = [{"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 1, "startColumnIndex": 1}, "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.00"}}}, "fields": "userEnteredFormat.numberFormat"}}]
+        
+        c_red, c_green = {"red":0.96,"green":0.8,"blue":0.8}, {"red":0.85,"green":0.93,"blue":0.82}
+        idx = {c: idx for idx, c in enumerate(final_df.columns)}
+        
+        def rule(col, op, val, color):
+            if col in idx: reqs.append({"addConditionalFormatRule": {"index": 0, "rule": {"ranges": [{"sheetId": ws.id, "startColumnIndex": idx[col], "endColumnIndex": idx[col]+1, "startRowIndex": 1}], "booleanRule": {"condition": {"type": op, "values": [{"userEnteredValue": str(val)}]}, "format": {"backgroundColor": color}}}}})
 
-    try:
-        json_creds = json.loads(os.environ['GCP_SERVICE_ACCOUNT'])
-        creds = Credentials.from_service_account_info(json_creds, scopes=SCOPES)
-        client = gspread.authorize(creds)
-        sh = client.open(SHEET_NAME)
-    except Exception as e:
-        print(f"Google Sheets Connection Error: {e}")
-        return
+        for col in ['4.5r', '20r', '50r']: rule(col, 'NUMBER_GREATER', 200, c_green); rule(col, 'NUMBER_LESS', 50, c_red)
+        for col in ['4.5chg', '20chg', '50chg']: rule(col, 'NUMBER_GREATER', 20, c_green); rule(col, 'NUMBER_LESS', -20, c_red)
+        
+        # Trend Color
+        trend = full_df['__score__'].iloc[0] if '__score__' in full_df else 0
+        t_color = {"red":0,"green":0.8,"blue":0} if trend >= 3 else ({"red":1,"green":0,"blue":0} if trend <= -3 else {"red":0,"green":0,"blue":0})
+        reqs.append({"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": final_df.columns[0]}, "userEnteredFormat": {"backgroundColor": t_color, "textFormat": {"foregroundColor": {"red":1,"green":1,"blue":1}, "bold": True}, "horizontalAlignment": "CENTER"}}]}], "fields": "userEnteredValue,userEnteredFormat"}})
 
-    # Process each table
-    for i, new_df in enumerate(data_frames):
-        tab_title = f"Scan_Results_{i+1}"
-        
-        try:
-            worksheet = sh.worksheet(tab_title)
-        except:
-            worksheet = sh.add_worksheet(title=tab_title, rows=1000, cols=20)
+        try: ws.spreadsheet.batch_update({"requests": reqs})
+        except Exception as e: print(f"⚠️ Format warning: {e}")
 
-        # --- A. HEADER CHECK ---
-        # Ensure headers exist and are correct
-        current_headers = worksheet.row_values(1)
-        expected_cols = new_df.columns.values.tolist()
-        
-        # If headers missing or mismatch, force write them
-        if not current_headers or current_headers[0] != 'Scraped_At_IST':
-            print(f"[{tab_title}] Writing Headers...")
-            full_header = ['Scraped_At_IST'] + expected_cols
-            worksheet.update('A1', [full_header])
+    print("✅ All tables processed.")
 
-        # --- B. FULL HISTORY SYNC (Adjust past data) ---
-        
-        # 1. Map existing sheet data { "Key": Row_Index }
-        all_values = worksheet.get_all_values()
-        existing_row_map = {}
-        
-        # Determine which column is the Unique Key (Symbol or Date)
-        # Sheet Col 1 (B) is usually the key (Col A is Timestamp)
-        sheet_key_col_idx = 1 
-        
-        # Heuristic: If it looks like a stock scanner, find the symbol column
-        first_col_name = new_df.columns[0].lower()
-        if 'symbol' in first_col_name or 'stock' in first_col_name:
-            for idx, col in enumerate(new_df.columns):
-                if 'symbol' in col.lower() or 'stock' in col.lower():
-                    sheet_key_col_idx = idx + 1 # +1 offset for timestamp
-                    break
-        
-        # Build Map
-        if len(all_values) > 1:
-            for row_idx, row in enumerate(all_values):
-                if row_idx == 0: continue # Skip header
-                if len(row) > sheet_key_col_idx:
-                    key_val = str(row[sheet_key_col_idx]).strip()
-                    existing_row_map[key_val] = row_idx + 1 # Save 1-based index
-
-        # 2. Compare New Data vs Old Data
-        rows_to_insert = []
-        timestamp = get_ist_time()
-        
-        for _, row_series in new_df.iterrows():
-            new_row_data = row_series.values.tolist()
-            # Key in DataFrame (no offset needed here)
-            key_val = str(new_row_data[sheet_key_col_idx - 1]).strip()
-            
-            full_row_to_write = [timestamp] + new_row_data
-            
-            if key_val in existing_row_map:
-                # Key exists -> Check for changes (Adjustments)
-                row_number = existing_row_map[key_val]
-                current_sheet_row = all_values[row_number - 1]
-                
-                # Compare data only (ignore timestamp at index 0)
-                current_data_only = current_sheet_row[1:] if len(current_sheet_row) > 1 else []
-                
-                if current_data_only != new_row_data:
-                    print(f"[{tab_title}] Updating changed data for: {key_val}")
-                    worksheet.update(f"A{row_number}", [full_row_to_write])
-            else:
-                # Key is new -> Add to insert list
-                rows_to_insert.append(full_row_to_write)
-        
-        # 3. Batch Insert New Rows
-        if rows_to_insert:
-            print(f"[{tab_title}] Inserting {len(rows_to_insert)} new rows.")
-            worksheet.insert_rows(rows_to_insert, row=2)
-
-# ==========================================
-# MAIN EXECUTION FLOW
-# ==========================================
-if __name__ == "__main__":
-    # 1. Scrape
-    raw_html = asyncio.run(fetch_raw_html(URL))
-    
-    # 2. Clean
-    clean_data = process_and_clean_data(raw_html)
-    
-    # 3. Load
-    sync_to_google_sheets(clean_data)
+if __name__ == "__main__": main()
