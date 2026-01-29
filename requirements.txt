@@ -5,3 +5,4 @@ oauth2client
 google-auth
 pytz
 lxml
+gspread-dataframe
