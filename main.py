@@ -83,4 +83,72 @@ def update_google_sheet(data_frames):
         return
 
     try:
-        json_creds = json.loads(os.
+        json_creds = json.loads(os.environ['GCP_SERVICE_ACCOUNT'])
+        creds = Credentials.from_service_account_info(json_creds, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        sh = client.open(SHEET_NAME)
+    except Exception as e:
+        print(f"Error connecting to Sheets: {e}")
+        return
+
+    for i, new_df in enumerate(data_frames):
+        tab_title = f"Scan_Results_{i+1}"
+        
+        try:
+            worksheet = sh.worksheet(tab_title)
+        except:
+            worksheet = sh.add_worksheet(title=tab_title, rows=1000, cols=20)
+            headers = ['Scraped_At'] + new_df.columns.values.tolist()
+            worksheet.append_row(headers)
+        
+        # --- SYMBOL-ONLY COMPARISON LOGIC ---
+        
+        # 1. Find which column has the Stock Name (Index in DataFrame)
+        target_col_idx = get_comparison_column_index(new_df)
+        
+        # 2. Extract NEW Symbols
+        # iloc[:, target_col_idx] grabs that specific column
+        new_symbols = new_df.iloc[:, target_col_idx].tolist()
+
+        # 3. Extract OLD Symbols from Sheet
+        # The sheet has 'Scraped_At' at Col A (Index 0).
+        # So DataFrame Col 0 is Sheet Col 1 (B). DataFrame Col 1 is Sheet Col 2 (C).
+        sheet_col_index = target_col_idx + 1 
+        
+        # Get existing data (just enough rows)
+        existing_rows = worksheet.get_values(f"A2:Z{len(new_df) + 1}")
+        
+        existing_symbols = []
+        if existing_rows:
+            for row in existing_rows:
+                # Check if row has data at that column
+                if len(row) > sheet_col_index:
+                    existing_symbols.append(row[sheet_col_index])
+                else:
+                    existing_symbols.append("")
+
+        # 4. Compare
+        # We strip whitespace to be safe
+        new_symbols_clean = [str(s).strip() for s in new_symbols]
+        old_symbols_clean = [str(s).strip() for s in existing_symbols]
+
+        if new_symbols_clean == old_symbols_clean:
+            print(f"[{tab_title}] No change in Stock List. Skipping.")
+            continue
+            
+        # --- SAVE IF DIFFERENT ---
+        print(f"[{tab_title}] Stock list changed! Appending data...")
+        
+        # Add Timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_df.insert(0, 'Scraped_At', timestamp)
+        
+        # Insert at Top
+        values = new_df.values.tolist()
+        if values:
+            worksheet.insert_rows(values, row=2)
+            print(f"[{tab_title}] Logged {len(values)} rows.")
+
+if __name__ == "__main__":
+    data = asyncio.run(scrape_chartink())
+    update_google_sheet(data)
