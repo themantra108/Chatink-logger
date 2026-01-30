@@ -41,6 +41,10 @@ def clean_currency(val):
         return val
 
 def calculate_year(date_val):
+    """
+    Smart Year Logic:
+    If today is Jan 2026, and row says '29th Dec', it treats it as 2025.
+    """
     try:
         current_date = datetime.now()
         current_year = current_date.year
@@ -55,16 +59,23 @@ def calculate_year(date_val):
 
 def identify_table_type(df):
     """
-    Returns a unique Name based on columns.
+    SMART IDENTIFIER:
+    Checks columns to decide where the data belongs.
     """
     cols = [str(c).lower() for c in df.columns]
+    
+    # If it has 'Date', 'Day', or 'Period' -> It's History
     if any(x in cols for x in ['date', 'day', 'period']):
         return "History_Log"
+    
+    # If it has 'Symbol', 'Stock', or 'Script' -> It's the Scanner
     if any(x in cols for x in ['symbol', 'stock', 'script']):
         return "Stock_Scanner"
+    
     return f"Unknown_Table_{len(df.columns)}Cols"
 
 def force_number_format(worksheet, df):
+    """API CALL: Forces Google Sheets to treat columns as Numbers"""
     try:
         start_col = 2
         end_col = len(df.columns)
@@ -110,7 +121,7 @@ def apply_formatting(worksheet, df):
         except: pass
 
 def safe_batch_update(worksheet, updates):
-    """Chunks updates to avoid API limits (400 Bad Request)"""
+    """Chunks updates to avoid API limits"""
     CHUNK_SIZE = 500
     for i in range(0, len(updates), CHUNK_SIZE):
         chunk = updates[i:i + CHUNK_SIZE]
@@ -195,7 +206,7 @@ async def run_bot():
 
         for item in processed_data:
             df = item['df']
-            tab_title = item['type']
+            tab_title = item['type'] # e.g. "History_Log" or "Stock_Scanner"
             
             print(f"   Syncing {tab_title}...")
             
@@ -214,6 +225,7 @@ async def run_bot():
                 
             # HISTORY SYNC
             if tab_title == "History_Log":
+                # Only check Date column (Index 1) for duplicates
                 exist = {str(r[1]).strip(): idx+1 for idx, r in enumerate(all_val) if idx > 0}
                 new_rows, updates = [], []
                 
@@ -223,7 +235,6 @@ async def run_bot():
                     
                     if key in exist:
                         row_idx = exist[key]
-                        # Safe compare
                         s_row = [str(x) for x in all_val[row_idx-1][1:]]
                         d_row = [str(x) for x in row_l[1:]]
                         
@@ -262,7 +273,7 @@ async def run_bot():
     except Exception as e:
         print(f"❌ CRITICAL ERROR: {str(e)}")
         traceback.print_exc()
-        raise e # Fail the GitHub Action so you see the red X
+        raise e 
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
