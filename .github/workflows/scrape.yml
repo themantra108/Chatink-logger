@@ -1,32 +1,35 @@
-name: Chartink Auto-Log
+name: Chartink Scraper Bot
 
 on:
+  # Run every 3 minutes
   schedule:
-    - cron: '*/5 * * * *' # Runs every 5 minutes
-  workflow_dispatch:      # Allows manual run button
+    - cron: '*/3 * * * *'
+  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
-  scrape-job:
+  run-scraper:
     runs-on: ubuntu-latest
-    
-    # Timeout prevents stuck jobs eating your free minutes
-    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      # Uses the latest stable version of Python (e.g., 3.12+)
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.x'
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          playwright install chromium
-          playwright install-deps
 
-      - name: Run Scraper
+      - name: Install Playwright Chromium
+        run: playwright install chromium
+
+      - name: Run ETL Pipeline
         env:
           GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
         run: python main.py
