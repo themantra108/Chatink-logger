@@ -22,14 +22,13 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapi
 # ==========================================
 
 def get_ist_time():
-    """Returns current time in IST (Indian Standard Time)"""
+    """Returns current time in IST"""
     IST = pytz.timezone('Asia/Kolkata')
     return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
 
 def clean_header(col_name):
     """
-    Removes garbage text like '_Sort_table_by...' from column headers.
-    Input: 'Symbol_Sort_table_by_Symbol...' -> Output: 'Symbol'
+    Removes garbage text like '_Sort_table_by...' 
     """
     c = str(col_name)
     if "_Sort" in c: c = c.split("_Sort")[0]
@@ -38,14 +37,14 @@ def clean_header(col_name):
 
 def calculate_year(date_val):
     """
-    Determines the correct year for a date like '29th Dec'.
-    Logic: If we are in Jan 2026, but the data says 'Dec', it must be Dec 2025.
+    Smart Year Logic:
+    If today is Jan 2026, and row says '29th Dec', it interprets it as Dec 2025.
     """
     try:
         current_date = datetime.now()
         current_year = current_date.year
         
-        # Remove suffixes like 'th', 'st', 'nd' (e.g., 29th -> 29)
+        # Clean "29th Jan" -> "29 Jan"
         s = str(date_val).strip()
         clean_d = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', s)
         
@@ -61,22 +60,21 @@ def calculate_year(date_val):
 
 def apply_formatting(worksheet, df):
     """
-    Applies Yellow/Green/Red Conditional Formatting to the Dashboard.
-    Yellow = Breakout, Green = Bullish, Red = Bearish.
+    Applies Traffic Light Formatting (Yellow/Green/Red) to the sheet.
     """
-    print("         🎨 Applying visual formatting...")
+    print("      🎨 Applying Visual Rules...")
     
-    # Define soft pastel colors for better readability
+    # Define Colors
     green  = {"red": 0.85, "green": 0.93, "blue": 0.82} 
     red    = {"red": 0.96, "green": 0.8,  "blue": 0.8}
     yellow = {"red": 1.0,  "green": 1.0,  "blue": 0.8}
 
-    # Create a map of {ColumnName: Index} to find where to apply rules
+    # Map Headers to Column Index
     headers = df.columns.tolist()
     idx = {name: i for i, name in enumerate(headers)}
+    
     requests = []
     
-    # Helper to generate a rule request
     def add_rule(col, condition_type, val, color):
         if col in idx:
             requests.append({
@@ -87,7 +85,7 @@ def apply_formatting(worksheet, df):
                             "startColumnIndex": idx[col], 
                             "endColumnIndex": idx[col]+1, 
                             "startRowIndex": 1, 
-                            "endRowIndex": 1000
+                            "endRowIndex": 1000 # Apply to rows 2-1000
                         }],
                         "booleanRule": {
                             "condition": {"type": condition_type, "values": [{"userEnteredValue": str(val)}]},
@@ -97,51 +95,56 @@ def apply_formatting(worksheet, df):
                 }
             })
 
-    # --- RULE DEFINITIONS ---
+    # --- SPECIFIC RULES ---
+    
+    # 1. 4.5r (High Momentum)
     if '4.5r' in idx: 
-        add_rule('4.5r', 'NUMBER_GREATER', 400, yellow) # Super Breakout
-        add_rule('4.5r', 'NUMBER_GREATER', 200, green)  # Strong
-        add_rule('4.5r', 'NUMBER_LESS', 50, red)        # Weak
+        add_rule('4.5r', 'NUMBER_GREATER', 400, yellow)
+        add_rule('4.5r', 'NUMBER_GREATER', 200, green)
+        add_rule('4.5r', 'NUMBER_LESS', 50, red)
 
-    # Standard RSI-like indicators
-    if '20r' in idx: add_rule('20r', 'NUMBER_GREATER', 75, green); add_rule('20r', 'NUMBER_LESS', 50, red)
-    if '50r' in idx: add_rule('50r', 'NUMBER_GREATER', 85, green); add_rule('50r', 'NUMBER_LESS', 60, red)
+    # 2. 20r
+    if '20r' in idx: 
+        add_rule('20r', 'NUMBER_GREATER', 75, green)
+        add_rule('20r', 'NUMBER_LESS', 50, red)
 
-    # Percentage Changes
+    # 3. 50r
+    if '50r' in idx: 
+        add_rule('50r', 'NUMBER_GREATER', 85, green)
+        add_rule('50r', 'NUMBER_LESS', 60, red)
+
+    # 4. Percentage Changes
     for c in ['4.5chg', '20chg', '50chg', '%ch']:
         if c in idx: 
             add_rule(c, 'NUMBER_GREATER', 20, green)
             add_rule(c, 'NUMBER_LESS', -20, red)
 
-    # Send batch update to Google Sheets (Faster than one by one)
     if requests:
-        try: worksheet.spreadsheet.batch_update({"requests": requests})
-        except: pass
+        try:
+            # Clear old rules first to avoid stacking
+            worksheet.clear_basic_filter() 
+            worksheet.spreadsheet.batch_update({"requests": requests})
+        except Exception as e:
+            print(f"      ⚠️ Formatting Warning: {e}")
 
 # ==========================================
 #           MAIN PIPELINE
 # ==========================================
 
 async def run_bot():
-    print("🚀 Starting ETL Pipeline...")
+    print("🚀 Starting Bot...")
     
-    # -------------------------------------
-    # STEP 1: EXTRACT (Scrape the Website)
-    # -------------------------------------
+    # --- 1. EXTRACT ---
     async with async_playwright() as p:
         print("   🌐 Launching browser...")
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         try:
-            # Visit URL and wait for network to settle
             await page.goto(URL, timeout=60000)
             await page.wait_for_load_state('networkidle')
-            
-            # Wait specifically for the table to appear
             try: await page.wait_for_selector("table", state="attached", timeout=15000)
             except: pass
             
-            # grab HTML and parse with Pandas
             content = await page.content()
             dfs = pd.read_html(content)
         except Exception as e:
@@ -150,15 +153,42 @@ async def run_bot():
         finally:
             await browser.close()
 
-    if not dfs: return print("   ❌ No tables found on the page.")
+    if not dfs: return print("   ❌ No data found.")
+
+    # --- 2. TRANSFORM ---
+    clean_dfs = []
+    timestamp = get_ist_time()
     
-    # -------------------------------------
-    # STEP 2: CONNECT (Google Sheets)
-    # -------------------------------------
-    if 'GCP_SERVICE_ACCOUNT' not in os.environ: 
-        return print("   ❌ Secret 'GCP_SERVICE_ACCOUNT' missing.")
+    for df in dfs:
+        # Filter empty tables
+        if len(df) > 1 and len(df.columns) > 1 and 'No data' not in str(df.iloc[0,0]):
+            
+            # A. Clean Headers
+            df.columns = [clean_header(c) for c in df.columns]
+            
+            # B. Convert to Numeric (Crucial for Colors!)
+            for col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='ignore')
+            
+            # C. Basics
+            df.fillna("", inplace=True)
+            df.insert(0, 'Scraped_At_IST', timestamp)
+            
+            # D. Add Year Column
+            try:
+                # Check index 1 (Date column)
+                sample = str(df.iloc[0, 1])
+                if any(x in sample for x in ['Jan', 'Dec', 'th', 'st']):
+                    df['Year'] = df.iloc[:, 1].apply(calculate_year)
+            except: pass
+            
+            clean_dfs.append(df)
+
+    # --- 3. LOAD ---
+    if not clean_dfs: return print("   ❌ No valid tables to sync.")
+    if 'GCP_SERVICE_ACCOUNT' not in os.environ: return print("   ❌ GCP Secret Missing.")
     
-    print("   🔑 Authenticating with Google...")
+    print("   🔑 Connecting to Sheets...")
     creds = Credentials.from_service_account_info(
         json.loads(os.environ['GCP_SERVICE_ACCOUNT']), scopes=SCOPES
     )
@@ -170,106 +200,60 @@ async def run_bot():
         sh = client.create(SHEET_NAME)
         sh.share(json.loads(os.environ['GCP_SERVICE_ACCOUNT'])['client_email'], perm_type='user', role='owner')
 
-    timestamp = get_ist_time()
-
-    # -------------------------------------
-    # STEP 3: PROCESS & LOAD (Loop Tables)
-    # -------------------------------------
-    print(f"   🔄 Processing {len(dfs)} tables...")
-
-    for i, df in enumerate(dfs):
-        # Skip empty tables or "No data" placeholders
-        if len(df) <= 1 or len(df.columns) <= 1 or 'No data' in str(df.iloc[0,0]):
-            continue
-
-        print(f"   Processing Table {i+1}...")
-
-        # -----------------------------
-        # A. TRANSFORM (Clean Data)
-        # -----------------------------
-        # 1. Clean Headers
-        df.columns = [clean_header(c) for c in df.columns]
+    # Sync Logic
+    for i, df in enumerate(clean_dfs):
+        tab_title = f"Table_{i+1}"
+        print(f"   🔄 Syncing {tab_title}...")
         
-        # 2. Convert text numbers to Real Numbers (Int/Float)
-        # This allows you to do math in Google Sheets
-        for col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='ignore')
+        try: ws = sh.worksheet(tab_title)
+        except: ws = sh.add_worksheet(tab_title, 1000, 25)
         
-        df.fillna("", inplace=True)
-        df.insert(0, 'Scraped_At_IST', timestamp)
-        
-        # 3. Add Year Column Logic
-        # Looks for columns containing "Date" or "Day" logic
-        try:
-            # We assume the data key (Date/Symbol) is always at Index 1 (0 is Timestamp)
-            # We check a sample value to see if it looks like a date (e.g. "29th Jan")
-            sample_val = str(df.iloc[0, 1])
-            if any(x in sample_val for x in ['Jan', 'Dec', 'th', 'st']):
-                df['Year'] = df.iloc[:, 1].apply(calculate_year)
-        except: pass
-
-        # -----------------------------
-        # B. LOAD TO SHEET (Smart Sync)
-        # -----------------------------
-        try: ws = sh.worksheet(f"Table_{i+1}")
-        except: ws = sh.add_worksheet(f"Table_{i+1}", 1000, 25)
-        
-        # Always force headers to match our clean DataFrame
+        # Update Header Row
         ws.update('A1', [df.columns.values.tolist()]) 
         
-        # Determine if this is a HISTORY table (Date-based) or SCANNER (Symbol-based)
-        first_col_name = df.columns[1].lower() if len(df.columns) > 1 else ""
+        first_col = df.columns[1].lower() if len(df.columns) > 1 else ""
         
-        if 'date' in first_col_name or 'day' in first_col_name:
-            # --- HISTORY SYNC ---
-            # 1. Read existing data to find matches
+        # HISTORY TABLE LOGIC
+        if 'date' in first_col or 'day' in first_col:
             all_val = ws.get_all_values()
-            # Map { "29th Jan": RowNumber }
-            existing_map = {str(r[1]).strip(): idx+1 for idx, r in enumerate(all_val) if idx > 0}
+            # Map Date (col 1) -> Row Index
+            exist = {str(r[1]).strip(): idx+1 for idx, r in enumerate(all_val) if idx > 0}
             
-            new_rows_to_add = []
-            
+            new_rows = []
             for _, row in df.iterrows():
-                row_list = row.values.tolist()
-                date_key = str(row_list[1]).strip() # Date is at Index 1
+                row_l = row.values.tolist()
+                key = str(row_l[1]).strip()
                 
-                if date_key in existing_map:
-                    # UPDATE existing row if data changed
-                    row_idx = existing_map[date_key]
-                    # Compare data (skipping timestamp at index 0)
-                    # Note: We convert to string for comparison safety
-                    sheet_data = [str(x) for x in all_val[row_idx-1][1:]]
-                    new_data   = [str(x) for x in row_list[1:]]
+                if key in exist:
+                    # Check for updates (skip timestamp)
+                    row_idx = exist[key]
+                    sheet_row_str = [str(x) for x in all_val[row_idx-1][1:]]
+                    df_row_str = [str(x) for x in row_l[1:]]
                     
-                    if sheet_data != new_data:
-                        ws.update(f"A{row_idx}", [row_list])
+                    if sheet_row_str != df_row_str:
+                        ws.update(f"A{row_idx}", [row_l])
                 else:
-                    # ADD new row
-                    new_rows_to_add.append(row_list)
+                    new_rows.append(row_l)
             
-            if new_rows_to_add:
-                ws.insert_rows(new_rows_to_add, 2)
+            if new_rows: ws.insert_rows(new_rows, 2)
             
-            # Always apply colors to keep dashboard fresh
+            # Apply Colors
             apply_formatting(ws, df)
-            
+
+        # SCANNER LOGIC
         else:
-            # --- SCANNER SYNC ---
-            # For scanners, we usually just append if the list of stocks changed
-            # Get existing symbols from Column B (Index 1)
             target_idx = 1
-            existing_symbols = [str(r[1]).strip() for r in ws.get_values(f"A2:Z{len(df)+50}")]
-            new_symbols = [str(x).strip() for x in df.iloc[:, target_idx].tolist()]
+            exist_sym = [str(r[1]).strip() for r in ws.get_values(f"A2:Z{len(df)+50}")]
+            new_sym = [str(x).strip() for x in df.iloc[:, target_idx].tolist()]
             
-            # Only update if the top results are different
-            if existing_symbols[:len(new_symbols)] != new_symbols:
-                print("      ✨ New scanner results found. Updating.")
+            if exist_sym[:len(new_sym)] != new_sym:
+                print("      ✨ Appending new data.")
                 ws.insert_rows(df.values.tolist(), 2)
                 apply_formatting(ws, df)
             else:
-                print("      💤 No change in scanner results.")
+                print("      💤 No change.")
 
-    print("✅ ETL Pipeline Finished Successfully.")
+    print("✅ Done.")
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
