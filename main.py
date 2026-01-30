@@ -32,18 +32,12 @@ def clean_header(col_name):
     return c.strip("_ .")
 
 def clean_currency(val):
-    """
-    Aggressively turns "1,200.50" or "  50 " into strict floats.
-    """
     try:
-        # Convert to string, strip spaces/commas
         s = str(val).replace(',', '').strip()
-        # If empty, return 0 or empty
         if not s: return ""
-        # Convert to float
         return float(s)
     except:
-        return val # Return original if it's text (like '29th Jan')
+        return val
 
 def calculate_year(date_val):
     try:
@@ -59,49 +53,25 @@ def calculate_year(date_val):
         return datetime.now().year
 
 def force_number_format(worksheet, df):
-    """
-    API CALL: Commands Google Sheets to set columns C -> End as 'NUMBER' (0.00)
-    This fixes the 'Text stored as Number' issue.
-    """
-    print("      🔧 Forcing Sheet to NUMBER format...")
-    
-    # Calculate columns. 
-    # Col A=0 (Timestamp), Col B=1 (Date). 
-    # So we want to format from Index 2 (Col C) to the end.
+    """API CALL: Forces Google Sheets to treat columns as Numbers"""
     start_col_index = 2 
-    end_col_index = len(df.columns) 
-    
-    # Define the request
+    end_col_index = len(df.columns)
     requests = [{
         "repeatCell": {
             "range": {
                 "sheetId": worksheet.id,
-                "startRowIndex": 1,         # Skip Header
-                "endRowIndex": 1000,        # Cover 1000 rows
-                "startColumnIndex": start_col_index,
-                "endColumnIndex": end_col_index
+                "startRowIndex": 1, "endRowIndex": 1000,
+                "startColumnIndex": start_col_index, "endColumnIndex": end_col_index
             },
-            "cell": {
-                "userEnteredFormat": {
-                    "numberFormat": {
-                        "type": "NUMBER",
-                        "pattern": "0.00"   # Forces 2 decimal places
-                    }
-                }
-            },
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.00"}}},
             "fields": "userEnteredFormat.numberFormat"
         }
     }]
-    
-    try:
-        worksheet.spreadsheet.batch_update({"requests": requests})
-    except Exception as e:
-        print(f"      ⚠️ Number Format Warning: {e}")
+    try: worksheet.spreadsheet.batch_update({"requests": requests})
+    except: pass
 
 def apply_formatting(worksheet, df):
-    print("      🎨 Applying Colors...")
     green, red, yellow = {"red":0.85,"green":0.93,"blue":0.82}, {"red":0.96,"green":0.8,"blue":0.8}, {"red":1,"green":1,"blue":0.8}
-    
     headers = df.columns.tolist()
     idx = {name: i for i, name in enumerate(headers)}
     requests = []
@@ -132,23 +102,30 @@ def apply_formatting(worksheet, df):
 # ==========================================
 
 async def run_bot():
-    print("🚀 Turbo Pipeline Started...")
+    print("🚀 Bot Started...")
     
     # --- 1. EXTRACT ---
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        # Block heavy resources
         context = await browser.new_context()
+        # Block images to speed up, but allow scripts so DataTables load
         await context.route("**/*", lambda route: route.abort() 
-            if route.request.resource_type in ["image", "media", "font", "stylesheet"] 
+            if route.request.resource_type in ["image", "media", "font"] 
             else route.continue_())
             
         page = await context.new_page()
         try:
-            await page.goto(URL, timeout=45000, wait_until="domcontentloaded")
-            try: await page.wait_for_selector("table", state="attached", timeout=10000)
-            except: pass
-            dfs = pd.read_html(await page.content())
+            print("   🌐 Loading URL...")
+            await page.goto(URL, timeout=60000)
+            
+            # CRITICAL: Wait for actual data rows, not just the table shell
+            try: 
+                await page.wait_for_selector("table tbody tr", state="attached", timeout=20000)
+            except: 
+                print("   ⚠️ Timed out waiting for data rows. Proceeding with whatever is there.")
+
+            content = await page.content()
+            dfs = pd.read_html(content)
         except Exception as e:
             print(f"   ❌ Scrape Error: {e}")
             dfs = []
@@ -164,15 +141,8 @@ async def run_bot():
     for df in dfs:
         if len(df) > 1 and len(df.columns) > 1 and 'No data' not in str(df.iloc[0,0]):
             df.columns = [clean_header(c) for c in df.columns]
-            
-            # --- AGGRESSIVE NUMBER CLEANING ---
-            # Identify potential number columns (everything except Date/Symbol)
-            # We assume Col 0 and 1 are text (Timestamp added later, usually Date/Symbol are first in raw)
-            # Actually, let's just try to convert ALL columns. 
             for col in df.columns:
-                # Apply strict cleaner (strips commas, spaces)
                 df[col] = df[col].apply(clean_currency)
-            
             df.fillna("", inplace=True)
             df.insert(0, 'Scraped_At_IST', timestamp)
             try:
@@ -193,16 +163,26 @@ async def run_bot():
 
     for i, df in enumerate(clean_dfs):
         tab_title = f"Table_{i+1}"
+        print(f"   Processing {tab_title} ({len(df)} rows)...")
+        
         try: ws = sh.worksheet(tab_title)
         except: ws = sh.add_worksheet(tab_title, 1000, 25)
         
-        ws.update('A1', [df.columns.values.tolist()]) 
-        
         first_col = df.columns[1].lower() if len(df.columns) > 1 else ""
+        all_val = ws.get_all_values()
         
+        # --- FRESH START LOGIC ---
+        # If sheet is empty (or just header), simply dump the data
+        if len(all_val) <= 1:
+            print(f"      ✨ Empty sheet detected. dumping all data...")
+            ws.clear()
+            set_with_dataframe(ws, df, include_column_header=True)
+            force_number_format(ws, df)
+            apply_formatting(ws, df)
+            continue # Skip the rest of the logic for this table
+            
+        # --- HISTORY LOGIC ---
         if 'date' in first_col or 'day' in first_col:
-            # HISTORY SYNC
-            all_val = ws.get_all_values()
             exist = {str(r[1]).strip(): idx+1 for idx, r in enumerate(all_val) if idx > 0}
             new_rows = []
             updates = []
@@ -213,9 +193,9 @@ async def run_bot():
                 
                 if key in exist:
                     row_idx = exist[key]
-                    sheet_row_str = [str(x) for x in all_val[row_idx-1][1:]]
-                    df_row_str = [str(x) for x in row_l[1:]]
-                    if sheet_row_str != df_row_str:
+                    sheet_row = [str(x) for x in all_val[row_idx-1][1:]]
+                    df_row = [str(x) for x in row_l[1:]]
+                    if sheet_row != df_row:
                         updates.append({'range': f"A{row_idx}", 'values': [row_l]})
                 else:
                     new_rows.append(row_l)
@@ -223,23 +203,21 @@ async def run_bot():
             if new_rows: ws.insert_rows(new_rows, 2)
             if updates: ws.batch_update(updates)
             
-            # --- APPLY FORCE FORMATTING HERE ---
             force_number_format(ws, df)
             apply_formatting(ws, df)
             
         else:
-            # SCANNER SYNC
+            # --- SCANNER LOGIC ---
             target_idx = 1
             exist_sym = [str(r[1]).strip() for r in ws.get_values(f"A2:Z{len(df)+50}")]
             new_sym = [str(x).strip() for x in df.iloc[:, target_idx].tolist()]
             
             if exist_sym[:len(new_sym)] != new_sym:
                 ws.insert_rows(df.values.tolist(), 2)
-                # --- APPLY FORCE FORMATTING HERE ---
                 force_number_format(ws, df)
                 apply_formatting(ws, df)
 
-    print("✅ Formatted Sync Done.")
+    print("✅ Done.")
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
