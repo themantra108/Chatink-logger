@@ -2,6 +2,7 @@ import asyncio
 import os
 import json
 import re
+import traceback
 import pandas as pd
 from datetime import datetime
 import pytz
@@ -55,23 +56,15 @@ def calculate_year(date_val):
 def identify_table_type(df):
     """
     Returns a unique Name based on columns.
-    Fixes the 'Table 13 became Table 10' issue.
     """
-    cols = [c.lower() for c in df.columns]
-    
-    # 1. Check for History Table (Must have Date/Day column)
+    cols = [str(c).lower() for c in df.columns]
     if any(x in cols for x in ['date', 'day', 'period']):
         return "History_Log"
-    
-    # 2. Check for Stocks Scanner (Must have Symbol/Stock column)
     if any(x in cols for x in ['symbol', 'stock', 'script']):
         return "Stock_Scanner"
-    
-    # 3. Fallback for others
     return f"Unknown_Table_{len(df.columns)}Cols"
 
 def force_number_format(worksheet, df):
-    """Forces Google Sheets to treat columns as Numbers"""
     try:
         start_col = 2
         end_col = len(df.columns)
@@ -116,130 +109,160 @@ def apply_formatting(worksheet, df):
         try: worksheet.spreadsheet.batch_update({"requests": requests})
         except: pass
 
+def safe_batch_update(worksheet, updates):
+    """Chunks updates to avoid API limits (400 Bad Request)"""
+    CHUNK_SIZE = 500
+    for i in range(0, len(updates), CHUNK_SIZE):
+        chunk = updates[i:i + CHUNK_SIZE]
+        try:
+            worksheet.batch_update(chunk)
+            print(f"      ✅ Synced batch {i}-{i+len(chunk)}")
+        except Exception as e:
+            print(f"      ⚠️ Batch failed: {e}")
+
 # ==========================================
 #           MAIN PIPELINE
 # ==========================================
 
 async def run_bot():
-    print("🚀 Smart-Bot Started...")
+    print("🚀 Robust-Bot Started...")
     
-    # --- 1. EXTRACT ---
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
-        await context.route("**/*", lambda route: route.abort() 
-            if route.request.resource_type in ["image", "media", "font"] 
-            else route.continue_())
-            
-        page = await context.new_page()
-        try:
-            print("   🌐 Loading URL...")
-            await page.goto(URL, timeout=60000)
-            try: await page.wait_for_selector("table tbody tr", state="attached", timeout=20000)
-            except: pass
-
-            content = await page.content()
-            dfs = pd.read_html(content)
-        except Exception as e:
-            print(f"   ❌ Scrape Error: {e}")
-            dfs = []
-        finally:
-            await browser.close()
-
-    if not dfs: return print("   ❌ No data found.")
-
-    # --- 2. TRANSFORM ---
-    clean_dfs = []
-    timestamp = get_ist_time()
-    
-    for df in dfs:
-        if len(df) > 1 and len(df.columns) > 1 and 'No data' not in str(df.iloc[0,0]):
-            df.columns = [clean_header(c) for c in df.columns]
-            for col in df.columns:
-                df[col] = df[col].apply(clean_currency)
-            df.fillna("", inplace=True)
-            df.insert(0, 'Scraped_At_IST', timestamp)
+    try:
+        # --- 1. EXTRACT ---
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            await context.route("**/*", lambda route: route.abort() 
+                if route.request.resource_type in ["image", "media", "font"] 
+                else route.continue_())
+                
+            page = await context.new_page()
             try:
+                print("   🌐 Loading URL...")
+                await page.goto(URL, timeout=60000)
+                try: await page.wait_for_selector("table tbody tr", state="attached", timeout=20000)
+                except: pass
+
+                content = await page.content()
+                dfs = pd.read_html(content)
+            except Exception as e:
+                print(f"   ❌ Scrape Error: {e}")
+                dfs = []
+            finally:
+                await browser.close()
+
+        if not dfs: return print("   ❌ No data found.")
+
+        # --- 2. TRANSFORM ---
+        processed_data = [] # Store tuple (df, type_name)
+        timestamp = get_ist_time()
+        
+        for df in dfs:
+            if len(df) > 1 and len(df.columns) > 1 and 'No data' not in str(df.iloc[0,0]):
+                # Clean Headers
+                df.columns = [clean_header(c) for c in df.columns]
+                
+                # Clean Numbers
+                for col in df.columns:
+                    df[col] = df[col].apply(clean_currency)
+                
+                df.fillna("", inplace=True)
+                df.insert(0, 'Scraped_At_IST', timestamp)
+                
                 # Year Logic
-                if any(x in str(df.iloc[0, 1]) for x in ['Jan', 'Dec', 'th', 'st']):
-                    df['Year'] = df.iloc[:, 1].apply(calculate_year)
-            except: pass
+                try:
+                    if any(x in str(df.iloc[0, 1]) for x in ['Jan', 'Dec', 'th', 'st']):
+                        df['Year'] = df.iloc[:, 1].apply(calculate_year)
+                except: pass
+                
+                # Identity Logic
+                t_type = identify_table_type(df)
+                processed_data.append({'df': df, 'type': t_type})
+
+        # --- 3. LOAD ---
+        if not processed_data: return print("   ❌ No valid tables processed.")
+        
+        if 'GCP_SERVICE_ACCOUNT' not in os.environ:
+            print("   ❌ Secret 'GCP_SERVICE_ACCOUNT' is missing.")
+            return
+        
+        creds = Credentials.from_service_account_info(
+            json.loads(os.environ['GCP_SERVICE_ACCOUNT']), scopes=SCOPES
+        )
+        client = gspread.authorize(creds)
+        try: sh = client.open(SHEET_NAME)
+        except: sh = client.create(SHEET_NAME)
+
+        for item in processed_data:
+            df = item['df']
+            tab_title = item['type']
             
-            # IDENTITY LOGIC: Name the DF so we know where it goes
-            df.name = identify_table_type(df)
-            clean_dfs.append(df)
-
-    # --- 3. LOAD ---
-    if not clean_dfs: return
-    
-    creds = Credentials.from_service_account_info(
-        json.loads(os.environ['GCP_SERVICE_ACCOUNT']), scopes=SCOPES
-    )
-    client = gspread.authorize(creds)
-    try: sh = client.open(SHEET_NAME)
-    except: sh = client.create(SHEET_NAME)
-
-    for df in clean_dfs:
-        # Use the SMART NAME instead of "Table_13"
-        # If multiple tables have the same type, we append a suffix (e.g. Stock_Scanner_1, Stock_Scanner_2)
-        # But for now, let's assume one History and one Scanner.
-        
-        tab_title = df.name
-        
-        # Handle duplicates if multiple scanners exist
-        # We check if tab exists, if so, does it have same columns?
-        # Simple Logic: If History, force "History_Log". If Scanner, force "Stock_Scanner".
-        
-        print(f"   Syncing {tab_title}...")
-        
-        try: ws = sh.worksheet(tab_title)
-        except: ws = sh.add_worksheet(tab_title, 1000, 25)
-        
-        # FRESH START Check
-        all_val = ws.get_all_values()
-        if len(all_val) <= 1:
-            ws.clear()
-            set_with_dataframe(ws, df, include_column_header=True)
-            force_number_format(ws, df)
-            apply_formatting(ws, df)
-            continue
+            print(f"   Syncing {tab_title}...")
             
-        # HISTORY SYNC
-        if tab_title == "History_Log":
-            exist = {str(r[1]).strip(): idx+1 for idx, r in enumerate(all_val) if idx > 0}
-            new_rows, updates = [], []
-            for _, row in df.iterrows():
-                row_l = row.values.tolist()
-                key = str(row_l[1]).strip()
-                if key in exist:
-                    row_idx = exist[key]
-                    s_row = [str(x) for x in all_val[row_idx-1][1:]]
-                    d_row = [str(x) for x in row_l[1:]]
-                    if s_row != d_row:
-                        updates.append({'range': f"A{row_idx}", 'values': [row_l]})
-                else:
-                    new_rows.append(row_l)
-            if new_rows: ws.insert_rows(new_rows, 2)
-            if updates: ws.batch_update(updates)
-            force_number_format(ws, df)
-            apply_formatting(ws, df)
-
-        # SCANNER SYNC
-        elif tab_title == "Stock_Scanner":
-            target_idx = 1
-            exist_sym = [str(r[1]).strip() for r in ws.get_values(f"A2:Z{len(df)+50}")]
-            new_sym = [str(x).strip() for x in df.iloc[:, target_idx].tolist()]
-            if exist_sym[:len(new_sym)] != new_sym:
-                ws.insert_rows(df.values.tolist(), 2)
+            try: ws = sh.worksheet(tab_title)
+            except: ws = sh.add_worksheet(tab_title, 1000, 25)
+            
+            # FRESH START Check
+            all_val = ws.get_all_values()
+            if len(all_val) <= 1:
+                print("      ✨ Sheet empty. Dumping data...")
+                ws.clear()
+                set_with_dataframe(ws, df, include_column_header=True)
                 force_number_format(ws, df)
                 apply_formatting(ws, df)
-        
-        # GENERIC SYNC (For unknown tables)
-        else:
-            ws.clear()
-            set_with_dataframe(ws, df, include_column_header=True)
+                continue
+                
+            # HISTORY SYNC
+            if tab_title == "History_Log":
+                exist = {str(r[1]).strip(): idx+1 for idx, r in enumerate(all_val) if idx > 0}
+                new_rows, updates = [], []
+                
+                for _, row in df.iterrows():
+                    row_l = row.values.tolist()
+                    key = str(row_l[1]).strip()
+                    
+                    if key in exist:
+                        row_idx = exist[key]
+                        # Safe compare
+                        s_row = [str(x) for x in all_val[row_idx-1][1:]]
+                        d_row = [str(x) for x in row_l[1:]]
+                        
+                        if s_row != d_row:
+                            updates.append({'range': f"A{row_idx}", 'values': [row_l]})
+                    else:
+                        new_rows.append(row_l)
+                
+                if new_rows: ws.insert_rows(new_rows, 2)
+                if updates: safe_batch_update(ws, updates) # Safe Batching
+                
+                force_number_format(ws, df)
+                apply_formatting(ws, df)
 
-    print("✅ Smart Sync Done.")
+            # SCANNER SYNC
+            elif tab_title == "Stock_Scanner":
+                target_idx = 1
+                # Safely get existing symbols
+                existing_rows = ws.get_values(f"A2:B{len(df)+50}")
+                exist_sym = [str(r[1]).strip() for r in existing_rows if len(r) > 1]
+                
+                new_sym = [str(x).strip() for x in df.iloc[:, target_idx].tolist()]
+                
+                if exist_sym[:len(new_sym)] != new_sym:
+                    ws.insert_rows(df.values.tolist(), 2)
+                    force_number_format(ws, df)
+                    apply_formatting(ws, df)
+            
+            # GENERIC SYNC
+            else:
+                ws.clear()
+                set_with_dataframe(ws, df, include_column_header=True)
+
+        print("✅ Smart Sync Done.")
+
+    except Exception as e:
+        print(f"❌ CRITICAL ERROR: {str(e)}")
+        traceback.print_exc()
+        raise e # Fail the GitHub Action so you see the red X
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
