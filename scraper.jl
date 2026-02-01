@@ -2,20 +2,24 @@
 import Pkg
 using Dates, Sockets
 
-# --- 1. SETUP ENVIRONMENT ---
-println(">> 1. Installing Packages...")
+# --- 1. SETUP & INSTALLATION ---
+println(">> 1. Setting up Environment...")
 try
-    using GoogleSheets, ChromeDevToolsLite, DataFrames, JSON
+    using PyCall, ChromeDevToolsLite, DataFrames, JSON
 catch
-    Pkg.add("GoogleSheets")
+    # Install Julia Packages
+    Pkg.add(["PyCall", "DataFrames", "JSON"])
     Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl")
-    Pkg.add(["DataFrames", "JSON"])
-    using GoogleSheets, ChromeDevToolsLite, DataFrames, JSON
+    using PyCall, ChromeDevToolsLite, DataFrames, JSON
 end
 
+# Install Python Libraries (Required for gspread auth)
+println(">> Installing Python dependencies...")
+run(`pip install gspread google-auth`)
+
 # --- CONFIGURATION ---
-# REPLACE WITH YOUR ACTUAL SHEET ID
-SPREADSHEET_ID = "YOUR_SPREADSHEET_ID_GOES_HERE" 
+# ✅ YOUR SPECIFIC SHEET ID IS SET HERE:
+SPREADSHEET_ID = "17hKfqbd5-BP9QV8ZyJSlGFvhggDMPxX47B7O1wWJLUs"
 
 SCAN_MAPPING = Dict(
     "Atlas" => "Atlas_Scan",
@@ -23,38 +27,35 @@ SCAN_MAPPING = Dict(
     "Volume" => "Volume_Shocks"
 )
 
-# --- 2. ROBUST AUTHENTICATION ---
-# We force the file into the default location AND set the ENV var with absolute path
-if haskey(ENV, "GCP_SERVICE_ACCOUNT")
-    # 1. Determine the 'default' path where GoogleSheets.jl looks
-    # usually: ~/.julia/config/google_sheets/credentials.json
-    creds_dir = joinpath(first(DEPOT_PATH), "config", "google_sheets")
-    mkpath(creds_dir) # Create directory if missing
-    
-    creds_path = joinpath(creds_dir, "credentials.json")
-    
-    # 2. Write the secret to this file
-    open(creds_path, "w") do f
-        write(f, ENV["GCP_SERVICE_ACCOUNT"])
-    end
-    
-    # 3. Set ENV var to Absolute Path (Double safety)
-    ENV["GOOGLESHEETSCREDENTIALS"] = abspath(creds_path)
-    
-    println(">> Auth: Credentials saved to: $creds_path")
-else
-    println("⚠ ERROR: GCP_SERVICE_ACCOUNT secret is missing from GitHub!")
+# --- 2. AUTHENTICATION (ROBUST GSPREAD) ---
+println(">> 2. Authenticating with Service Account...")
+
+if !haskey(ENV, "GCP_SERVICE_ACCOUNT")
+    println("⚠ ERROR: GCP_SERVICE_ACCOUNT secret is missing from GitHub Settings!")
     exit(1)
 end
 
-# --- 3. CONNECT TO SHEETS ---
-println(">> 2. Connecting to Google Sheets...")
-# Initialize with specific scope
-client = sheets_client(AUTH_SCOPE_READWRITE)
-ss = Spreadsheet(SPREADSHEET_ID)
-println("   ✔ Connected to Sheet.")
+# Load Python Libraries via PyCall
+gspread = pyimport("gspread")
+service_account = pyimport("google.oauth2.service_account")
 
-# --- 4. LAUNCH CHROME ---
+# Parse JSON Secret directly from memory
+creds_dict = JSON.parse(ENV["GCP_SERVICE_ACCOUNT"])
+scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=scopes)
+gc = gspread.authorize(creds)
+
+# Connect to the Sheet
+try
+    global ss = gc.open_by_key(SPREADSHEET_ID)
+    println("   ✔ Connected to Sheet: ", ss.title)
+catch e
+    println("❌ ERROR: Could not open sheet!")
+    println("   Make sure you shared the sheet with: ", creds_dict["client_email"])
+    rethrow(e)
+end
+
+# --- 3. LAUNCH CHROME ---
 println(">> 3. Launching Chrome...")
 cmd = `google-chrome --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-data`
 process = run(pipeline(cmd, stdout=devnull, stderr=devnull), wait=false)
@@ -66,7 +67,7 @@ for i in 1:20
 end
 if !ready error("Chrome failed to start") end
 
-# --- 5. SCRAPING LOGIC ---
+# --- 4. SCRAPING LOGIC ---
 println(">> 4. Scraping Dashboard...")
 browser = connect_browser()
 
@@ -74,12 +75,12 @@ try
     url = "https://chartink.com/dashboard/208896"
     goto(browser, url)
 
-    # Smart Wait
+    # Smart Wait (Wait up to 30s for data)
     for i in 1:30
         if evaluate(browser, "document.querySelectorAll('tbody tr').length > 0") == true break end
         sleep(1)
     end
-    sleep(2)
+    sleep(2) # Buffer
 
     # Extract Data
     js_script = """
@@ -90,6 +91,7 @@ try
                     Array.from(tr.querySelectorAll("td")).map(td => td.innerText.trim())
                 );
                 
+                // Find Title
                 let title = "Scan_" + (index + 1);
                 let parent = table.closest('.card, .panel');
                 if (parent) {
@@ -118,7 +120,7 @@ try
             title = scan["title"]
             rows = scan["rows"]
             
-            # Map Title
+            # Map Title to Tab
             target_tab = "Other_Scans"
             for (k, v) in SCAN_MAPPING
                 if occursin(k, title) target_tab = v; break; end
@@ -129,7 +131,7 @@ try
 
             println("   📝 Syncing '$title' -> '$target_tab'")
 
-            # Prepare Data
+            # Prepare Data Rows
             n_cols = maximum(length.(rows))
             matrix_rows = []
             
@@ -139,24 +141,19 @@ try
             end
             
             if !isempty(matrix_rows)
-                data_matrix = permutedims(hcat(matrix_rows...))
-                
-                # Check/Create Sheet
-                existing_sheets = sheet_names(client, ss)
-                if !(target_tab in existing_sheets)
-                    add_sheet!(client, ss, target_tab)
+                # Check Tab Exists / Create
+                ws = nothing
+                try
+                    ws = ss.worksheet(target_tab)
+                catch
+                    ws = ss.add_worksheet(title=target_tab, rows=1000, cols=30)
                     header = ["Scraped_At", "Scan_Name", ["Col_$i" for i in 1:n_cols]...]
-                    update!(client, CellRange(ss, "$(target_tab)!A1"), permutedims(header))
+                    ws.append_row(header)
                 end
 
-                # Append Logic
-                try
-                    current_data = get(client, CellRange(ss, "$(target_tab)!A:A"))
-                    next_row = length(current_data.values) + 1
-                    update!(client, CellRange(ss, "$(target_tab)!A$(next_row)"), data_matrix)
-                catch
-                    update!(client, CellRange(ss, "$(target_tab)!A2"), data_matrix)
-                end
+                # Append Data
+                ws.append_rows(matrix_rows)
+                println("      ✔ Appended $(length(matrix_rows)) rows.")
             end
         end
     end
