@@ -2,29 +2,31 @@
 import Pkg
 using Dates, Sockets
 
-println(">> 1. Setting up Environment...")
+println(">> 1. Configuring Python Environment...")
 
-# --- FORCE JULIA TO USE ITS OWN PYTHON (CONDA) ---
-# This fixes the "ModuleNotFoundError" by isolating our Python from the system
+# --- STEP 1: FORCE PRIVATE PYTHON ENVIRONMENT ---
+# We set this to empty string "" to tell PyCall: "Download your own Python, ignore the system."
 ENV["PYTHON"] = "" 
 
+# Install Julia dependencies
 try
-    using PyCall, Conda, ChromeDevToolsLite, DataFrames, JSON
+    using Conda, PyCall, ChromeDevToolsLite, DataFrames, JSON
 catch
-    # Install packages
-    Pkg.add(["PyCall", "Conda", "DataFrames", "JSON"])
+    Pkg.add(["Conda", "PyCall", "DataFrames", "JSON"])
     Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl")
     
-    # Re-build PyCall to ensure it uses the new Conda environment
+    # CRITICAL: We MUST build PyCall after setting ENV["PYTHON"]=""
+    println(">> Building PyCall with private Conda environment...")
     Pkg.build("PyCall")
     
-    using PyCall, Conda, ChromeDevToolsLite, DataFrames, JSON
+    using Conda, PyCall, ChromeDevToolsLite, DataFrames, JSON
 end
 
-# --- INSTALL PYTHON DEPENDENCIES CORRECTLY ---
-println(">> Installing Python libraries via Conda...")
-# We install directly into the Julia-managed Python environment
+# --- STEP 2: INSTALL PYTHON PACKAGES INTO CONDA ---
+println(">> Installing gspread into Julia's private Python...")
+# Enable pip inside Julia's Conda
 Conda.pip_interop(true)
+# Install libraries into the EXACT same environment PyCall is using
 Conda.pip("install", ["gspread", "google-auth"])
 
 # --- CONFIGURATION ---
@@ -36,16 +38,15 @@ SCAN_MAPPING = Dict(
     "Volume" => "Volume_Shocks"
 )
 
-# --- 2. AUTHENTICATION ---
-println(">> 2. Authenticating with Service Account...")
+# --- 3. AUTHENTICATION ---
+println(">> 2. Authenticating...")
 
 if !haskey(ENV, "GCP_SERVICE_ACCOUNT")
     println("⚠ ERROR: GCP_SERVICE_ACCOUNT secret is missing from GitHub Settings!")
     exit(1)
 end
 
-# Import Python libraries
-# Now this works because we installed them into the same Conda env PyCall is using
+# Import Python libraries (These will now work because they are in Conda)
 gspread = pyimport("gspread")
 service_account = pyimport("google.oauth2.service_account")
 
@@ -65,7 +66,7 @@ catch e
     rethrow(e)
 end
 
-# --- 3. LAUNCH CHROME ---
+# --- 4. LAUNCH CHROME ---
 println(">> 3. Launching Chrome...")
 cmd = `google-chrome --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-data`
 process = run(pipeline(cmd, stdout=devnull, stderr=devnull), wait=false)
@@ -77,7 +78,7 @@ for i in 1:20
 end
 if !ready error("Chrome failed to start") end
 
-# --- 4. SCRAPING LOGIC ---
+# --- 5. SCRAPING LOGIC ---
 println(">> 4. Scraping Dashboard...")
 browser = connect_browser()
 
