@@ -2,31 +2,26 @@
 import Pkg
 using Dates, Sockets
 
-println(">> 1. Configuring Python Environment...")
+println(">> 1. Setting up Environment...")
 
-# --- STEP 1: FORCE PRIVATE PYTHON ENVIRONMENT ---
-# We set this to empty string "" to tell PyCall: "Download your own Python, ignore the system."
-ENV["PYTHON"] = "" 
-
-# Install Julia dependencies
+# Install packages if missing
 try
     using Conda, PyCall, ChromeDevToolsLite, DataFrames, JSON
 catch
     Pkg.add(["Conda", "PyCall", "DataFrames", "JSON"])
     Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl")
     
-    # CRITICAL: We MUST build PyCall after setting ENV["PYTHON"]=""
-    println(">> Building PyCall with private Conda environment...")
-    Pkg.build("PyCall")
+    # We build PyCall to ensure it sees the PYTHON="" from the YAML file
+    Pkg.build("PyCall") 
     
     using Conda, PyCall, ChromeDevToolsLite, DataFrames, JSON
 end
 
-# --- STEP 2: INSTALL PYTHON PACKAGES INTO CONDA ---
-println(">> Installing gspread into Julia's private Python...")
-# Enable pip inside Julia's Conda
+# --- INSTALL PYTHON DEPENDENCIES (THE RIGHT WAY) ---
+println(">> Installing Python libraries into Conda...")
+# Enable pip inside Julia's private Python
 Conda.pip_interop(true)
-# Install libraries into the EXACT same environment PyCall is using
+# Install gspread into the SAME environment PyCall is using
 Conda.pip("install", ["gspread", "google-auth"])
 
 # --- CONFIGURATION ---
@@ -38,7 +33,7 @@ SCAN_MAPPING = Dict(
     "Volume" => "Volume_Shocks"
 )
 
-# --- 3. AUTHENTICATION ---
+# --- 2. AUTHENTICATION ---
 println(">> 2. Authenticating...")
 
 if !haskey(ENV, "GCP_SERVICE_ACCOUNT")
@@ -46,7 +41,8 @@ if !haskey(ENV, "GCP_SERVICE_ACCOUNT")
     exit(1)
 end
 
-# Import Python libraries (These will now work because they are in Conda)
+# Import Python libraries
+# This will now work because PyCall and Conda are finally synced
 gspread = pyimport("gspread")
 service_account = pyimport("google.oauth2.service_account")
 
@@ -66,7 +62,7 @@ catch e
     rethrow(e)
 end
 
-# --- 4. LAUNCH CHROME ---
+# --- 3. LAUNCH CHROME ---
 println(">> 3. Launching Chrome...")
 cmd = `google-chrome --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-data`
 process = run(pipeline(cmd, stdout=devnull, stderr=devnull), wait=false)
@@ -78,7 +74,7 @@ for i in 1:20
 end
 if !ready error("Chrome failed to start") end
 
-# --- 5. SCRAPING LOGIC ---
+# --- 4. SCRAPING LOGIC ---
 println(">> 4. Scraping Dashboard...")
 browser = connect_browser()
 
