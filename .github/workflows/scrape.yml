@@ -5,27 +5,26 @@ on:
     - cron: '*/5 * * * *'  # Runs every 5 minutes
   workflow_dispatch:      # Manual trigger button
 
+# GLOBAL ENVIRONMENT VARIABLES
+env:
+  PYTHON: ""  # <--- THIS IS THE FIX. Forces Julia to use its own private Python.
+
 jobs:
   scrape-job:
     runs-on: ubuntu-latest
     
     steps:
-      # 1. Download Code
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Install Latest Julia
       - name: Set up Julia
         uses: julia-actions/setup-julia@v1
         with:
-          version: '1' # '1' always fetches the latest stable release (e.g., 1.10+)
+          version: '1'
 
-      # 3. Enable Caching (SPEEDS UP RUNS 10x)
-      # This saves the installed packages so they don't re-compile every time
       - name: Cache Julia Artifacts
         uses: julia-actions/cache@v1
 
-      # 4. Run Scraper
       - name: Run Scraper
         env:
           GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
