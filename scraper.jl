@@ -14,7 +14,7 @@ catch
 end
 
 # --- CONFIGURATION ---
-SPREADSHEET_ID = "YOUR_SPREADSHEET_ID_GOES_HERE" # <--- REPLACE THIS!
+SPREADSHEET_ID = "https://docs.google.com/spreadsheets/d/17hKfqbd5-BP9QV8ZyJSlGFvhggDMPxX47B7O1wWJLUs/edit?usp=drive_link" # <--- REPLACE THIS!
 
 SCAN_MAPPING = Dict(
     "Atlas" => "Atlas_Scan",
