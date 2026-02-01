@@ -15,8 +15,8 @@ from gspread_dataframe import set_with_dataframe, get_as_dataframe
 #              CONFIGURATION
 # ==========================================
 URL = "https://chartink.com/dashboard/419640"
-SHEET_RAW = "Chartink Smart Log"      # History Storage (Append Only)
-SHEET_CLEAN = "Chartink Dashboard"     # Final Dashboard (Wipe & Refresh)
+SHEET_RAW = "Chartink_Data"      # History Storage (Append Only)
+SHEET_CLEAN = "Chartink_EOD"     # Final Dashboard (Wipe & Refresh)
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 # ==========================================
