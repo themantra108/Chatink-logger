@@ -6,4 +6,3 @@ google-auth
 gspread-dataframe
 lxml
 numpy
-openpyxl
