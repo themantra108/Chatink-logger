@@ -2,23 +2,32 @@
 import Pkg
 using Dates, Sockets
 
-# --- 1. SETUP & INSTALLATION ---
 println(">> 1. Setting up Environment...")
+
+# --- FORCE JULIA TO USE ITS OWN PYTHON (CONDA) ---
+# This fixes the "ModuleNotFoundError" by isolating our Python from the system
+ENV["PYTHON"] = "" 
+
 try
-    using PyCall, ChromeDevToolsLite, DataFrames, JSON
+    using PyCall, Conda, ChromeDevToolsLite, DataFrames, JSON
 catch
-    # Install Julia Packages
-    Pkg.add(["PyCall", "DataFrames", "JSON"])
+    # Install packages
+    Pkg.add(["PyCall", "Conda", "DataFrames", "JSON"])
     Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl")
-    using PyCall, ChromeDevToolsLite, DataFrames, JSON
+    
+    # Re-build PyCall to ensure it uses the new Conda environment
+    Pkg.build("PyCall")
+    
+    using PyCall, Conda, ChromeDevToolsLite, DataFrames, JSON
 end
 
-# Install Python Libraries (Required for gspread auth)
-println(">> Installing Python dependencies...")
-run(`pip install gspread google-auth`)
+# --- INSTALL PYTHON DEPENDENCIES CORRECTLY ---
+println(">> Installing Python libraries via Conda...")
+# We install directly into the Julia-managed Python environment
+Conda.pip_interop(true)
+Conda.pip("install", ["gspread", "google-auth"])
 
 # --- CONFIGURATION ---
-# ✅ YOUR SPECIFIC SHEET ID IS SET HERE:
 SPREADSHEET_ID = "17hKfqbd5-BP9QV8ZyJSlGFvhggDMPxX47B7O1wWJLUs"
 
 SCAN_MAPPING = Dict(
@@ -27,7 +36,7 @@ SCAN_MAPPING = Dict(
     "Volume" => "Volume_Shocks"
 )
 
-# --- 2. AUTHENTICATION (ROBUST GSPREAD) ---
+# --- 2. AUTHENTICATION ---
 println(">> 2. Authenticating with Service Account...")
 
 if !haskey(ENV, "GCP_SERVICE_ACCOUNT")
@@ -35,17 +44,18 @@ if !haskey(ENV, "GCP_SERVICE_ACCOUNT")
     exit(1)
 end
 
-# Load Python Libraries via PyCall
+# Import Python libraries
+# Now this works because we installed them into the same Conda env PyCall is using
 gspread = pyimport("gspread")
 service_account = pyimport("google.oauth2.service_account")
 
-# Parse JSON Secret directly from memory
+# Parse Secret
 creds_dict = JSON.parse(ENV["GCP_SERVICE_ACCOUNT"])
 scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=scopes)
 gc = gspread.authorize(creds)
 
-# Connect to the Sheet
+# Connect to Sheet
 try
     global ss = gc.open_by_key(SPREADSHEET_ID)
     println("   ✔ Connected to Sheet: ", ss.title)
@@ -75,12 +85,12 @@ try
     url = "https://chartink.com/dashboard/208896"
     goto(browser, url)
 
-    # Smart Wait (Wait up to 30s for data)
+    # Smart Wait
     for i in 1:30
         if evaluate(browser, "document.querySelectorAll('tbody tr').length > 0") == true break end
         sleep(1)
     end
-    sleep(2) # Buffer
+    sleep(2)
 
     # Extract Data
     js_script = """
@@ -91,7 +101,6 @@ try
                     Array.from(tr.querySelectorAll("td")).map(td => td.innerText.trim())
                 );
                 
-                // Find Title
                 let title = "Scan_" + (index + 1);
                 let parent = table.closest('.card, .panel');
                 if (parent) {
@@ -120,7 +129,6 @@ try
             title = scan["title"]
             rows = scan["rows"]
             
-            # Map Title to Tab
             target_tab = "Other_Scans"
             for (k, v) in SCAN_MAPPING
                 if occursin(k, title) target_tab = v; break; end
@@ -131,7 +139,6 @@ try
 
             println("   📝 Syncing '$title' -> '$target_tab'")
 
-            # Prepare Data Rows
             n_cols = maximum(length.(rows))
             matrix_rows = []
             
@@ -141,7 +148,6 @@ try
             end
             
             if !isempty(matrix_rows)
-                # Check Tab Exists / Create
                 ws = nothing
                 try
                     ws = ss.worksheet(target_tab)
@@ -151,7 +157,6 @@ try
                     ws.append_row(header)
                 end
 
-                # Append Data
                 ws.append_rows(matrix_rows)
                 println("      ✔ Appended $(length(matrix_rows)) rows.")
             end
