@@ -3,9 +3,9 @@ name: Chartink CSV Logger
 on:
   schedule:
     - cron: '*/5 * * * *'  # Run every 5 minutes
-  workflow_dispatch:      # Manual trigger
+  workflow_dispatch:      # Manual trigger button
 
-# Grant permission to write to the repo
+# CRITICAL: Grant permission to write changes back to the repo
 permissions:
   contents: write
 
@@ -22,6 +22,7 @@ jobs:
         with:
           version: '1'
 
+      # Caching speeds up the run from 5 mins -> 30 seconds
       - name: Cache Julia Artifacts
         uses: julia-actions/cache@v1
 
@@ -33,6 +34,6 @@ jobs:
           git config user.name "Chartink Bot"
           git config user.email "actions@github.com"
           git add *.csv
-          # Only commit if there are changes
+          # The "|| echo" prevents the workflow from failing if there's no new data
           git commit -m "Auto-update scan data [skip ci]" || echo "No changes to commit"
           git push
