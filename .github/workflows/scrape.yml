@@ -1,11 +1,15 @@
-name: Daily Chartink Scrape 📈
+name: Chartink Scraper (Every 5 Mins) 📈
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:      # Allows manual triggering
   schedule:
-    - cron: '30 3 * * 1-5' # Runs at 09:00 AM IST (Mon-Fri)
+    # 🕒 CRON SCHEDULE (UTC TIME)
+    # Market Hours: 09:15 IST - 15:30 IST
+    # UTC Equiv:    03:45 UTC - 10:00 UTC
+    # We run from 03:30 UTC to 11:00 UTC to catch pre/post market changes.
+    - cron: '*/5 3-11 * * 1-5'
 
-# 🔐 PERMISSIONS: We need this so the Action can write back to your repo
+# 🔐 PERMISSION: Critical for committing data back to the repo
 permissions:
   contents: write
 
@@ -28,8 +32,10 @@ jobs:
 
       - name: Start Headless Chrome 🚀
         run: |
+          # Start Chrome in background with stability flags
           google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage &
           
+          # Smart Wait Loop: Checks port 9222 until Chrome is ready
           echo "Waiting for Chrome to launch..."
           for i in {1..30}; do
             if curl -s http://127.0.0.1:9222/json/version > /dev/null; then
@@ -44,19 +50,21 @@ jobs:
       - name: Run Scraper 🕸️
         run: julia --project=. scraper.jl
 
-      # 👇 NEW STEP: Commits the file back to the repo
-      - name: Commit and Push Data 💾
+      - name: Commit and Push History 💾
         run: |
-          # 1. Configure the bot identity
+          # 1. Configure Bot Identity
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 2. Stage the file
-          git add output_data.txt
+          # 2. Pull latest changes to avoid conflicts (since we run often)
+          git pull --rebase
           
-          # 3. Commit (only if there are changes)
+          # 3. Add the history file
+          git add chartink_history.csv
+          
+          # 4. Commit (only if data changed)
           timestamp=$(date -u)
-          git commit -m "Scrape update: ${timestamp}" || echo "No changes to commit"
+          git commit -m "📈 Market Data: ${timestamp}" || echo "No changes to commit"
           
-          # 4. Push changes
+          # 5. Push
           git push
