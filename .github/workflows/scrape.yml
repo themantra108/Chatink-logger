@@ -46,4 +46,30 @@ jobs:
           exit 1
 
       - name: Run Scraper 🕸️
-        run: julia --project
+        run: julia --project=. scraper.jl
+
+      # 🐞 DEBUG STEP: If scraper fails/finds 0 rows, upload the HTML so you can see why
+      - name: Upload Debug Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-html
+          path: debug_error.html
+          if-no-files-found: ignore
+
+      - name: Commit and Push History 💾
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Pull first to avoid conflicts
+          git pull --rebase
+          
+          # Add the history CSV
+          git add chartink_history.csv
+          
+          # Commit only if there is new data
+          timestamp=$(date -u)
+          git commit -m "📈 Market Data: ${timestamp}" || echo "No changes to commit"
+          
+          git push
