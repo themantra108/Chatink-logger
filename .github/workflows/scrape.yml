@@ -1,9 +1,39 @@
+name: Chartink Scraper (Every 5 Mins) 📈
+
+on:
+  workflow_dispatch:      # Allows manual trigger button
+  schedule:
+    # 🕒 Run every 5 mins during Indian Market Hours (09:15 - 15:30 IST)
+    # UTC: 03:45 to 10:00 (approx)
+    - cron: '*/5 3-11 * * 1-5'
+
+# 🔐 Permission to write the CSV back to the repo
+permissions:
+  contents: write
+
+jobs:
+  scrape-dashboard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository 🛎️
+        uses: actions/checkout@v4
+
+      - name: Set up Julia 🟣
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+
+      - name: Install Dependencies 📦
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl"); Pkg.instantiate()'
+
       - name: Start Headless Chrome 🚀
         run: |
-          # We added --window-size and --user-agent to fool the website
+          # 🎭 DISGUISE MODE: Added User-Agent and Window-Size to look like a real PC
           google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" &
           
-          # (Keep the rest of the waiting logic the same...)
+          # Smart Wait: Loop until Chrome is ready
           echo "Waiting for Chrome to launch..."
           for i in {1..30}; do
             if curl -s http://127.0.0.1:9222/json/version > /dev/null; then
@@ -12,4 +42,8 @@
             fi
             sleep 1
           done
+          echo "❌ Chrome failed to start."
           exit 1
+
+      - name: Run Scraper 🕸️
+        run: julia --project
