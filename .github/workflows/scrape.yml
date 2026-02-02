@@ -1,16 +1,16 @@
-name: Chartink 5-Min Scraper
+name: Chartink CSV Logger
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Runs every 5 minutes
-  workflow_dispatch:      # Manual trigger button
+    - cron: '*/5 * * * *'  # Run every 5 minutes
+  workflow_dispatch:      # Manual trigger
 
-# GLOBAL ENVIRONMENT VARIABLES
-env:
-  PYTHON: ""  # <--- THIS IS THE FIX. Forces Julia to use its own private Python.
+# Grant permission to write to the repo
+permissions:
+  contents: write
 
 jobs:
-  scrape-job:
+  scrape-and-commit:
     runs-on: ubuntu-latest
     
     steps:
@@ -26,6 +26,13 @@ jobs:
         uses: julia-actions/cache@v1
 
       - name: Run Scraper
-        env:
-          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
         run: julia scraper.jl
+
+      - name: Commit and Push Data
+        run: |
+          git config user.name "Chartink Bot"
+          git config user.email "actions@github.com"
+          git add *.csv
+          # Only commit if there are changes
+          git commit -m "Auto-update scan data [skip ci]" || echo "No changes to commit"
+          git push
