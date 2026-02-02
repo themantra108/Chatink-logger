@@ -5,7 +5,6 @@ on:
     - cron: '*/5 * * * *'  # Runs every 5 minutes
   workflow_dispatch:      # Manual trigger button
 
-# Grant permission to write changes back to the repo
 permissions:
   contents: write
 
@@ -22,7 +21,6 @@ jobs:
         with:
           version: '1'
 
-      # Caching speeds up the run significantly
       - name: Cache Julia Artifacts
         uses: julia-actions/cache@v1
 
@@ -34,7 +32,7 @@ jobs:
           git config user.name "Chartink Bot"
           git config user.email "actions@github.com"
           
-          # 📂 KEY CHANGE: Add the entire 'scans' folder
+          # Target the specific 'scans' folder
           git add scans/*.csv
           
           # Check if there are changes before committing
