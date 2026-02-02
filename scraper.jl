@@ -4,7 +4,6 @@ using Dates, Sockets
 
 println(">> 1. Setting up Environment...")
 
-# Install pure Julia dependencies
 try
     using ChromeDevToolsLite, DataFrames, JSON, CSV
 catch
@@ -20,9 +19,8 @@ SCAN_MAPPING = Dict(
     "Volume" => "volume_shocks.csv"
 )
 
-# How long to wait for the page to settle (in seconds)
 MAX_WAIT_SECONDS = 120  
-STABILITY_REQUIRED = 5  # Data must not change for this many seconds before we save
+STABILITY_REQUIRED = 5 
 
 # --- 2. LAUNCH CHROME ---
 println(">> 2. Launching Chrome...")
@@ -39,46 +37,46 @@ if !ready error("Chrome failed to start") end
 println(">> 3. Scraping Dashboard...")
 browser = connect_browser()
 
+# FIX: Define these variables OUTSIDE the try block
+last_row_count = 0
+stable_ticks = 0
+
 try
     url = "https://chartink.com/dashboard/208896"
     goto(browser, url)
 
-    # --- 🚀 NEW: STABILITY WAIT LOGIC ---
     println("   Waiting for tables to fully load...")
     
-    last_row_count = 0
-    stable_ticks = 0
-    
+    # Start Stability Loop
     for i in 1:MAX_WAIT_SECONDS
-        # Count all data rows currently visible
-        # We look for 'tbody tr' that does NOT contain "Loading" or "Processing" text
+        # Count rows (excluding 'Loading...' placeholders)
         current_count = evaluate(browser, """
             (() => {
                 let rows = document.querySelectorAll('tbody tr');
                 let count = 0;
                 rows.forEach(r => {
-                    // Filter out loading placeholders if they exist
                     if (!r.innerText.includes("Loading")) count++;
                 });
                 return count;
             })()
         """)
         
-        # Check if data is stable (hasn't changed since last second)
+        # Stability Check
         if current_count > 0 && current_count == last_row_count
             global stable_ticks += 1
         else
-            global stable_ticks = 0 # Reset if data changed (new table loaded)
+            global stable_ticks = 0 
         end
         
+        # Update tracker (using global is safe here now)
         global last_row_count = current_count
         
-        # Debug print every 5 seconds
+        # Status update
         if i % 5 == 0
             println("      Time: $(i)s | Rows found: $current_count | Stable for: $(stable_ticks)s")
         end
 
-        # EXIT CONDITION: Data has been stable for 5 seconds
+        # Exit Condition
         if stable_ticks >= STABILITY_REQUIRED
             println("   ✔ Data stabilized. Proceeding to extract.")
             break
@@ -87,7 +85,7 @@ try
         sleep(1)
     end
     
-    sleep(2) # Final buffer
+    sleep(2) # Buffer
 
     # --- EXTRACTION ---
     js_script = """
@@ -105,7 +103,6 @@ try
                     if (header) title = header.innerText.trim();
                 }
 
-                // Push even empty tables so we know they were checked
                 results.push({ "title": title, "rows": rows });
             });
             return JSON.stringify({ "scans": results });
@@ -125,7 +122,6 @@ try
             title = scan["title"]
             rows = scan["rows"]
             
-            # Skip genuinely empty tables (0 rows)
             if length(rows) == 0 
                 println("   ⚠ Skipping '$title' (No Data)")
                 continue
@@ -145,7 +141,6 @@ try
                 push!(clean_rows, r)
             end
             
-            # Use Dynamic Headers
             headers = Symbol.(["Col_$i" for i in 1:n_cols])
             df = DataFrame([r[i] for r in clean_rows, i in 1:n_cols], headers)
             
