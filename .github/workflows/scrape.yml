@@ -1,40 +1,18 @@
-name: Daily Chartink Scrape 📈
-
-on:
-  workflow_dispatch: # Allows you to manually trigger it from the Actions tab
-  schedule:
-    - cron: '30 3 * * 1-5' # Runs at 09:00 AM IST (UTC+5:30) on weekdays
-
-jobs:
-  scrape-dashboard:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository 🛎️
-        uses: actions/checkout@v4
-
-      - name: Set up Julia 🟣
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: '1.10'
-
-      - name: Install Dependencies 📦
-        run: |
-          julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl"); Pkg.instantiate()'
-
       - name: Start Headless Chrome 🚀
         run: |
-          # We start Chrome in the background (&) on port 9222
-          google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu &
+          # 1. Start Chrome with extra flags to be more stable in CI
+          # --disable-dev-shm-usage: Prevents crashes in Docker/CI environments
+          # --disable-software-rasterizer: potentially reduces GPU errors
+          google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-software-rasterizer &
           
-          # Give it a few seconds to wake up
-          sleep 5
-
-      - name: Run Scraper 🕸️
-        run: julia --project=. scraper.jl
-
-      - name: Upload Scraped Data 📤
-        uses: actions/upload-artifact@v4
-        with:
-          name: chartink-data
-          path: output_data.txt
+          # 2. Robust Wait Pattern (Instead of just 'sleep 5')
+          # This loops until Chrome actually responds on port 9222
+          echo "Waiting for Chrome to launch..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:9222/json/version > /dev/null; then
+              echo "Chrome is up and running!"
+              break
+            fi
+            echo "Waiting..."
+            sleep 1
+          done
