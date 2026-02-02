@@ -1,41 +1,9 @@
-name: Chartink Scraper (Every 5 Mins) 📈
-
-on:
-  workflow_dispatch:      # Allows manual triggering
-  schedule:
-    # 🕒 CRON SCHEDULE (UTC TIME)
-    # Market Hours: 09:15 IST - 15:30 IST
-    # UTC Equiv:    03:45 UTC - 10:00 UTC
-    # We run from 03:30 UTC to 11:00 UTC to catch pre/post market changes.
-    - cron: '*/5 3-11 * * 1-5'
-
-# 🔐 PERMISSION: Critical for committing data back to the repo
-permissions:
-  contents: write
-
-jobs:
-  scrape-dashboard:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository 🛎️
-        uses: actions/checkout@v4
-
-      - name: Set up Julia 🟣
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: '1.10'
-
-      - name: Install Dependencies 📦
-        run: |
-          julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl"); Pkg.instantiate()'
-
       - name: Start Headless Chrome 🚀
         run: |
-          # Start Chrome in background with stability flags
-          google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage &
+          # We added --window-size and --user-agent to fool the website
+          google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" &
           
-          # Smart Wait Loop: Checks port 9222 until Chrome is ready
+          # (Keep the rest of the waiting logic the same...)
           echo "Waiting for Chrome to launch..."
           for i in {1..30}; do
             if curl -s http://127.0.0.1:9222/json/version > /dev/null; then
@@ -44,27 +12,4 @@ jobs:
             fi
             sleep 1
           done
-          echo "❌ Chrome failed to start."
           exit 1
-
-      - name: Run Scraper 🕸️
-        run: julia --project=. scraper.jl
-
-      - name: Commit and Push History 💾
-        run: |
-          # 1. Configure Bot Identity
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # 2. Pull latest changes to avoid conflicts (since we run often)
-          git pull --rebase
-          
-          # 3. Add the history file
-          git add chartink_history.csv
-          
-          # 4. Commit (only if data changed)
-          timestamp=$(date -u)
-          git commit -m "📈 Market Data: ${timestamp}" || echo "No changes to commit"
-          
-          # 5. Push
-          git push
