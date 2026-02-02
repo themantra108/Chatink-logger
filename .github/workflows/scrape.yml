@@ -2,8 +2,8 @@ name: Scraper
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Runs every 5 minutes
-  workflow_dispatch:      # Manual trigger
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -29,9 +29,11 @@ jobs:
           git config user.name "Scraper Bot"
           git config user.email "bot@github.com"
           
-          # Only add CSVs inside the scans folder
-          git add scans/*.csv
-          
-          # Commit only if there are changes
-          git diff --staged --quiet || git commit -m "New scan data"
-          git push
+          # 🛠 FIX: Only try to add files if they actually exist
+          if ls scans/*.csv 1> /dev/null 2>&1; then
+            git add scans/*.csv
+            git diff --staged --quiet || git commit -m "New scan data"
+            git push
+          else
+            echo "⚠️ No CSV files generated (Market closed or no data)."
+          fi
