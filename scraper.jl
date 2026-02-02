@@ -23,10 +23,11 @@ SCAN_MAPPING = Dict(
 
 # --- 2. LAUNCH CHROME ---
 println(">> 2. Launching Chrome...")
+# Standard path for GitHub Actions
 cmd = `google-chrome --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-data`
 process = run(pipeline(cmd, stdout=devnull, stderr=devnull), wait=false)
 
-# Wait for Chrome
+# Wait for Chrome to be ready
 ready = false
 for i in 1:20
     try connect("127.0.0.1", 9222); global ready = true; break; catch; sleep(1); end
@@ -41,19 +42,18 @@ try
     url = "https://chartink.com/dashboard/208896"
     goto(browser, url)
 
-    # Smart Wait (Wait up to 30s)
+    # Smart Wait (Wait up to 30s for data)
     for i in 1:30
         if evaluate(browser, "document.querySelectorAll('tbody tr').length > 0") == true break end
         sleep(1)
     end
-    sleep(2)
+    sleep(2) # Buffer for rendering
 
-    # Extract Data
+    # Extract Data (Robust JS)
     js_script = """
         (() => {
             const results = [];
             document.querySelectorAll("table").forEach((table, index) => {
-                const headers = Array.from(table.querySelectorAll("th")).map(th => th.innerText.trim());
                 const rows = Array.from(table.querySelectorAll("tbody tr")).map(tr => 
                     Array.from(tr.querySelectorAll("td")).map(td => td.innerText.trim())
                 );
@@ -66,7 +66,7 @@ try
                 }
 
                 if (rows.length > 0) {
-                    results.push({ "title": title, "headers": headers, "rows": rows });
+                    results.push({ "title": title, "rows": rows });
                 }
             });
             return JSON.stringify({ "scans": results });
@@ -85,7 +85,6 @@ try
         for scan in scans
             title = scan["title"]
             rows = scan["rows"]
-            headers = scan["headers"]
             
             # 1. Determine Filename
             target_file = "other_scans.csv"
@@ -93,32 +92,36 @@ try
                 if occursin(k, title) target_file = v; break; end
             end
             
-            println("   📝 Saving '$title' -> '$target_file'")
+            println("   📝 Processing '$title' -> '$target_file'")
 
-            # 2. Build DataFrame
+            # 2. FIX: Calculate Max Columns for this specific scan
             n_cols = maximum(length.(rows))
-            # Fix Headers
-            if length(headers) < n_cols append!(headers, ["Col_$i" for i in length(headers)+1:n_cols]) end
-            headers = headers[1:n_cols]
             
-            # Clean Rows
+            # 3. Clean Rows (Pad with empty strings if row is short)
             clean_rows = []
             for r in rows
                 while length(r) < n_cols push!(r, "") end
                 push!(clean_rows, r)
             end
             
-            # Create DataFrame
-            df = DataFrame([r[i] for r in clean_rows, i in 1:n_cols], Symbol.(headers))
+            # 4. Generate Dynamic Headers (Col_1, Col_2 ... Col_N)
+            # We explicitly create headers that match n_cols
+            headers = Symbol.(["Col_$i" for i in 1:n_cols])
             
-            # Add Metadata Columns to the LEFT
+            # 5. Create DataFrame
+            # Matrix construction: [r[i] for r in rows, i in cols]
+            df = DataFrame([r[i] for r in clean_rows, i in 1:n_cols], headers)
+            
+            # 6. Add Metadata (Timestamp & Name)
             insertcols!(df, 1, :Scraped_At => timestamp)
             insertcols!(df, 2, :Scan_Name => title)
             
-            # 3. Save to CSV (Append Mode)
-            # If file exists, append without headers. If new, write with headers.
+            # 7. Save to CSV
+            # Append if file exists; Write Header ONLY if file is new
             file_exists = isfile(target_file)
             CSV.write(target_file, df; append=file_exists, writeheader=!file_exists)
+            
+            println("      ✔ Saved $(nrow(df)) rows.")
         end
         println("\n✅ Data saved locally.")
     else
