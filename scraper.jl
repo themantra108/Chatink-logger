@@ -9,7 +9,7 @@ if !isdir(OUTPUT_DIR) mkdir(OUTPUT_DIR) end
 cmd = `google-chrome --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-data`
 run(pipeline(cmd, stdout=devnull, stderr=devnull), wait=false)
 
-# Wait for Chrome to start
+# Wait for Chrome
 ready=false; for i in 1:20 try connect("127.0.0.1", 9222); global ready=true; break; catch; sleep(1) end end
 if !ready error("Chrome failed") end
 
@@ -18,12 +18,15 @@ browser = connect_browser()
 try
     goto(browser, "https://chartink.com/dashboard/208896")
     
-    # Simple Wait: Wait up to 30s for tables to appear, then wait 5s for data to fill
-    for i in 1:30
-        if evaluate(browser, "document.querySelectorAll('.card, .panel').length > 0") == true break end
+    # 🛠 FIX: Wait specifically for DATA ROWS, not just empty tables
+    println("Waiting for data...")
+    for i in 1:60
+        # Check if rows exist OR if "No records" text exists
+        ready = evaluate(browser, "document.querySelectorAll('tbody tr').length > 0 || document.body.innerText.includes('No records')")
+        if ready == true break end
         sleep(1)
     end
-    sleep(5) 
+    sleep(5) # Safety buffer
 
     # Extract JS
     js = """
@@ -37,7 +40,7 @@ try
                 let d = Array.from(tr.querySelectorAll("td"));
                 if(d.length > 1) r.push(d.map(x => x.innerText.trim()));
             });
-            if(h.length > 0) res.push({title: t, headers: h, rows: r});
+            if(h.length > 0 && r.length > 0) res.push({title: t, headers: h, rows: r});
         });
         return JSON.stringify(res);
     })()
@@ -47,9 +50,9 @@ try
     data = JSON.parse(evaluate(browser, js))
     ts = Dates.format(now(Dates.UTC) + Dates.Hour(5) + Dates.Minute(30), "yyyy-mm-dd HH:MM:SS")
 
+    println("Found $(length(data)) scans with data.")
+
     for s in data
-        if isempty(s["rows"]) continue end
-        
         # Clean Filename
         clean_name = replace(s["title"], r"\(.*?\)" => "", r"[^a-zA-Z0-9]" => "_", r"__+" => "_")
         path = joinpath(OUTPUT_DIR, "scan_" * strip(clean_name, ['_']) * ".csv")
@@ -63,7 +66,7 @@ try
         df = DataFrame([r[i] for r in rows, i in 1:n], Symbol.(raw_h[1:n]))
         insertcols!(df, 1, :Scraped_At => ts)
         CSV.write(path, df; append=isfile(path), writeheader=!isfile(path))
-        println("Saved: $(s["title"])")
+        println("Saved: $(s["title"]) -> $path")
     end
 finally
     try close(browser) catch; end
