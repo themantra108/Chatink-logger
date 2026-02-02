@@ -25,17 +25,16 @@ end
 
 # --- HELPER: CLEAN FILENAMES ---
 function get_clean_filename(raw_text)
-    # 1. Remove the time pattern like (10:30 AM) so filename is static
+    # Remove time pattern like (10:30 AM)
     time_regex = r"\(?\d{1,2}:\d{2}\s?(?:AM|PM|am|pm)?\)?"
     clean_name = replace(raw_text, time_regex => "")
     
-    # 2. Clean up special characters
+    # Clean special chars
     clean_name = replace(clean_name, r"[^a-zA-Z0-9]" => "_") 
     clean_name = replace(clean_name, r"__+" => "_")          
     clean_name = strip(clean_name, ['_'])                    
     
     if isempty(clean_name) clean_name = "Unknown_Scan" end
-
     return "scan_" * first(clean_name, 40) * ".csv"
 end
 
@@ -68,7 +67,7 @@ try
 
         println("   Waiting for tables...")
         
-        # --- SMART WAIT LOGIC ---
+        # --- 🚀 ROBUST SMART WAIT LOGIC ---
         for i in 1:MAX_WAIT_SECONDS
             status = evaluate(browser, """
                 (() => {
@@ -86,9 +85,23 @@ try
                 })()
             """)
             
+            # FIX: Check if status is valid before accessing keys
+            if status === nothing || !haskey(status, "ready")
+                if i % 5 == 0
+                    println("      ⚠ Page loading... (JS not ready)")
+                end
+                sleep(1)
+                continue
+            end
+            
+            # Now it is safe to read keys
             if status["ready"] >= status["total"] && status["total"] > 0
                 println("   ✔ All $(status["total"]) tables loaded in $(i)s.")
                 break
+            end
+            
+            if i % 5 == 0
+                println("      Waiting... ($(status["ready"]) / $(status["total"]) tables ready)")
             end
             sleep(1)
         end
@@ -139,7 +152,7 @@ try
                 rows = scan["rows"]
                 raw_headers = scan["headers"]
                 
-                # Clean name for file (removes time from filename)
+                # Filename Logic
                 target_filename = get_clean_filename(raw_title)
                 target_path = joinpath(OUTPUT_DIR, target_filename)
                 
@@ -159,7 +172,7 @@ try
                 
                 df = DataFrame([r[i] for r in clean_rows, i in 1:n_cols], safe_headers)
                 
-                # Add Metadata (Only System Time)
+                # Add Metadata
                 insertcols!(df, 1, :Scraped_At => sys_timestamp)
                 
                 # Save
