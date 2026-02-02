@@ -37,7 +37,6 @@ if !ready error("Chrome failed to start") end
 println(">> 3. Scraping Dashboard...")
 browser = connect_browser()
 
-# FIX: Initialize these variables globally BEFORE the try block
 global last_row_count = 0
 global stable_ticks = 0
 
@@ -47,9 +46,8 @@ try
 
     println("   Waiting for tables to fully load...")
     
-    # Start Stability Loop
+    # Stability Loop
     for i in 1:MAX_WAIT_SECONDS
-        # Count rows (excluding 'Loading...' placeholders)
         current_count = evaluate(browser, """
             (() => {
                 let rows = document.querySelectorAll('tbody tr');
@@ -61,32 +59,25 @@ try
             })()
         """)
         
-        # Stability Check
-        # We must use 'global' to update the variables defined outside the loop
         if current_count > 0 && current_count == last_row_count
             global stable_ticks += 1
         else
             global stable_ticks = 0 
         end
         
-        # Update tracker 
         global last_row_count = current_count
         
-        # Status update
         if i % 5 == 0
             println("      Time: $(i)s | Rows found: $current_count | Stable for: $(stable_ticks)s")
         end
 
-        # Exit Condition
         if stable_ticks >= STABILITY_REQUIRED
             println("   ✔ Data stabilized. Proceeding to extract.")
             break
         end
-        
         sleep(1)
     end
-    
-    sleep(2) # Buffer
+    sleep(2)
 
     # --- EXTRACTION ---
     js_script = """
@@ -103,7 +94,6 @@ try
                     let header = parent.querySelector('.card-header, .panel-heading');
                     if (header) title = header.innerText.trim();
                 }
-
                 results.push({ "title": title, "rows": rows });
             });
             return JSON.stringify({ "scans": results });
@@ -115,9 +105,14 @@ try
     if data_str !== nothing
         data = JSON.parse(data_str)
         scans = data["scans"]
-        timestamp = Dates.format(now(), "yyyy-mm-dd HH:MM:SS")
         
-        println(">> Found $(length(scans)) Scans...")
+        # --- 🕒 TIMEZONE FIX (UTC -> IST) ---
+        # GitHub runs on UTC. We add 5h 30m to get IST.
+        utc_now = now(Dates.UTC)
+        ist_now = utc_now + Dates.Hour(5) + Dates.Minute(30)
+        timestamp = Dates.format(ist_now, "yyyy-mm-dd HH:MM:SS")
+        
+        println(">> Found $(length(scans)) Scans (Time: $timestamp IST)...")
         
         for scan in scans
             title = scan["title"]
@@ -142,7 +137,6 @@ try
                 push!(clean_rows, r)
             end
             
-            # Dynamic Headers
             headers = Symbol.(["Col_$i" for i in 1:n_cols])
             df = DataFrame([r[i] for r in clean_rows, i in 1:n_cols], headers)
             
