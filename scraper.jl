@@ -1,7 +1,7 @@
 using ChromeDevToolsLite
 using Dates
 
-# 🕒 Helper for Indian Standard Time
+# 🕒 Helper for Indian Standard Time (UTC + 5:30)
 function get_ist()
     return now(Dates.UTC) + Hour(5) + Minute(30)
 end
@@ -9,6 +9,7 @@ end
 println("🚀 Starting Scraper Job at $(get_ist()) IST")
 
 try
+    # Connect to the browser instance started by GitHub Actions
     page = ChromeDevToolsLite.connect_browser() 
     println("✅ Connected to Chrome!")
 
@@ -16,65 +17,62 @@ try
     println("🧭 Navigating to: $target_url")
     ChromeDevToolsLite.goto(page, target_url)
 
-    # Give it time to load all widgets
+    # ⏳ Wait 20 seconds to ensure Chartink loads fully (bypasses some loaders)
     println("⏳ Waiting for data to render...")
-    sleep(15)
+    sleep(20)
 
     println("⛏️ Extracting table data...")
     
-    # --- 🛠️ JS: THE CSV BUILDER ---
-    # This JS function finds all data rows, escapes quotes, 
-    # and returns a clean list of CSV lines.
+    # JavaScript to scrape data and format it as CSV lines
     extract_js = """
     (() => {
-        // Select ONLY data rows (tr inside tbody) to avoid grabbing headers every time
-        // If the dashboard uses 'thead' for headers, this skips them. 
-        // If it doesn't, we might get some headers, but that is okay for now.
+        // Select all table rows
         const rows = document.querySelectorAll("table tr");
-        
         if (rows.length === 0) return [];
         
         return Array.from(rows).map(row => {
             const cells = row.querySelectorAll("th, td");
             return Array.from(cells).map(c => {
-                let text = c.innerText.trim();
-                // Escape quotes (standard CSV rule: " becomes "")
+                // Get text and escape existing quotes for CSV validity
+                let text = c.textContent.trim(); 
                 text = text.replace(/"/g, '""');
-                // Wrap in quotes to handle commas inside the text
                 return `"\${text}"`;
             }).join(",");
         });
     })()
     """
     
-    # Get the list of strings (rows)
     result = ChromeDevToolsLite.evaluate(page, extract_js)
     
-    # Handle the result wrapper (sometimes it's a Dict, sometimes a Vector)
+    # Handle the wrapper object returned by the library
     rows = if isa(result, Dict) && haskey(result, "value")
         result["value"]
     else
         result
     end
 
-    # Define our persistent history file
     csv_file = "chartink_history.csv"
-    current_time = get_ist()
     
-    # Check if this is the very first run (to write headers if needed)
-    # For now, we just append data.
-    
-    # 📝 APPEND MODE ("a")
-    open(csv_file, "a") do io
-        # If result is empty/error
-        if isempty(rows) || rows == "NO DATA FOUND"
-            println("⚠️ No data found this run.")
-        else
+    # 🚨 LOGIC: Check if data was found
+    if isempty(rows) || rows == "NO DATA FOUND"
+        println("⚠️ 0 ROWS FOUND! DUMPING HTML FOR DEBUGGING...")
+        
+        # Save the page HTML to debug if Chartink blocked us
+        html_dump = ChromeDevToolsLite.evaluate(page, "document.documentElement.outerHTML")
+        html_content = isa(html_dump, Dict) ? html_dump["value"] : html_dump
+        
+        open("debug_error.html", "w") do io
+            print(io, html_content)
+        end
+        println("📸 Saved debug_error.html for inspection.")
+    else
+        # ✅ SUCCESS: Append data to history file
+        current_time = get_ist()
+        open(csv_file, "a") do io
             count = 0
             for row in rows
-                # We skip empty rows
-                if length(row) > 2 
-                    # Format: "2026-02-02T09:30:00, "Col1", "Col2"..."
+                # Basic filter to skip empty/malformed rows
+                if length(row) > 5 
                     println(io, "\"$(current_time)\",$row")
                     count += 1
                 end
@@ -86,7 +84,4 @@ try
 catch e
     println("💥 Error occurred: $e")
     rethrow(e)
-
-finally
-    # ChromeDevToolsLite.close(page)
 end
