@@ -1,9 +1,13 @@
 name: Daily Chartink Scrape 📈
 
 on:
-  workflow_dispatch:      # Allows manual triggering from GitHub UI
+  workflow_dispatch:
   schedule:
     - cron: '30 3 * * 1-5' # Runs at 09:00 AM IST (Mon-Fri)
+
+# 🔐 PERMISSIONS: We need this so the Action can write back to your repo
+permissions:
+  contents: write
 
 jobs:
   scrape-dashboard:
@@ -20,35 +24,39 @@ jobs:
 
       - name: Install Dependencies 📦
         run: |
-          # instantiates the environment based on Project.toml if it exists, 
-          # otherwise adds the package directly.
           julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl"); Pkg.instantiate()'
 
       - name: Start Headless Chrome 🚀
         run: |
-          # Start Chrome in the background with flags for stability in CI
-          # --disable-dev-shm-usage is CRITICAL for preventing crashes in Docker/Action runners
           google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage &
           
-          # "Smart Wait" loop: Checks every second if Chrome is answering on port 9222
           echo "Waiting for Chrome to launch..."
           for i in {1..30}; do
             if curl -s http://127.0.0.1:9222/json/version > /dev/null; then
               echo "✅ Chrome is up and connected!"
               exit 0
             fi
-            echo "Sleeping..."
             sleep 1
           done
-          echo "❌ Chrome failed to start in time."
+          echo "❌ Chrome failed to start."
           exit 1
 
       - name: Run Scraper 🕸️
         run: julia --project=. scraper.jl
 
-      - name: Upload Scraped Data 📤
-        uses: actions/upload-artifact@v4
-        with:
-          name: chartink-data
-          path: output_data.txt
-          retention-days: 5
+      # 👇 NEW STEP: Commits the file back to the repo
+      - name: Commit and Push Data 💾
+        run: |
+          # 1. Configure the bot identity
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 2. Stage the file
+          git add output_data.txt
+          
+          # 3. Commit (only if there are changes)
+          timestamp=$(date -u)
+          git commit -m "Scrape update: ${timestamp}" || echo "No changes to commit"
+          
+          # 4. Push changes
+          git push
