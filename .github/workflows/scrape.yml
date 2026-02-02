@@ -1,40 +1,37 @@
-name: Chartink CSV Logger
+name: Scraper
 
 on:
   schedule:
     - cron: '*/5 * * * *'  # Runs every 5 minutes
-  workflow_dispatch:      # Manual trigger button
+  workflow_dispatch:      # Manual trigger
 
 permissions:
   contents: write
 
 jobs:
-  scrape-and-commit:
+  run-scraper:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Julia
+      - name: Setup Julia
         uses: julia-actions/setup-julia@v1
         with:
           version: '1'
 
-      - name: Cache Julia Artifacts
-        uses: julia-actions/cache@v1
-
-      - name: Run Scraper
+      - name: Run Script
         run: julia scraper.jl
 
-      - name: Commit and Push Data
+      - name: Save Data
         run: |
-          git config user.name "Chartink Bot"
-          git config user.email "actions@github.com"
+          git config user.name "Scraper Bot"
+          git config user.email "bot@github.com"
           
-          # Target the specific 'scans' folder
+          # Only add CSVs inside the scans folder
           git add scans/*.csv
           
-          # Check if there are changes before committing
-          git diff --staged --quiet || git commit -m "Update scans data [skip ci]"
+          # Commit only if there are changes
+          git diff --staged --quiet || git commit -m "New scan data"
           git push
