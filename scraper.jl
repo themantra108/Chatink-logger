@@ -37,9 +37,9 @@ if !ready error("Chrome failed to start") end
 println(">> 3. Scraping Dashboard...")
 browser = connect_browser()
 
-# FIX: Define these variables OUTSIDE the try block
-last_row_count = 0
-stable_ticks = 0
+# FIX: Initialize these variables globally BEFORE the try block
+global last_row_count = 0
+global stable_ticks = 0
 
 try
     url = "https://chartink.com/dashboard/208896"
@@ -62,13 +62,14 @@ try
         """)
         
         # Stability Check
+        # We must use 'global' to update the variables defined outside the loop
         if current_count > 0 && current_count == last_row_count
             global stable_ticks += 1
         else
             global stable_ticks = 0 
         end
         
-        # Update tracker (using global is safe here now)
+        # Update tracker 
         global last_row_count = current_count
         
         # Status update
@@ -141,6 +142,7 @@ try
                 push!(clean_rows, r)
             end
             
+            # Dynamic Headers
             headers = Symbol.(["Col_$i" for i in 1:n_cols])
             df = DataFrame([r[i] for r in clean_rows, i in 1:n_cols], headers)
             
