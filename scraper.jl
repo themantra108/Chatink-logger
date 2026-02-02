@@ -1,82 +1,53 @@
-import Pkg; using Dates, Sockets
-try using ChromeDevToolsLite, DataFrames, JSON, CSV catch; Pkg.add(["DataFrames", "JSON", "CSV"]); Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl"); using ChromeDevToolsLite, DataFrames, JSON, CSV end
+using ChromeDevToolsLite
+using Dates
 
-# --- SETUP ---
-OUTPUT_DIR = "scans"
-if !isdir(OUTPUT_DIR) mkdir(OUTPUT_DIR) end
+println("🚀 Starting Scraper Job at $(now())")
 
-println(">> Launching Chrome...")
-cmd = `google-chrome --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-data`
-run(pipeline(cmd, stdout=devnull, stderr=devnull), wait=false)
+# Connect to the Chrome instance running in the GitHub Action background
+# Note: We use the default host "127.0.0.1" and port 9222
+chrome = ChromeDevToolsLite.connect() 
+page = ChromeDevToolsLite.new_tab(chrome)
 
-# Wait for Chrome to be ready
-is_ready = false
-for i in 1:20 
-    try connect("127.0.0.1", 9222); global is_ready=true; break; catch; sleep(1) end 
-end
-if !is_ready error("Chrome failed to start") end
-
-# --- SCRAPE ---
-browser = connect_browser()
 try
-    println(">> Navigating...")
-    goto(browser, "https://chartink.com/dashboard/208896")
-    
-    # 🛠 FIX: Dumb Wait (Reliable)
-    # Don't check for "Ready" state. Just wait 15s for data to definitely appear.
-    println(">> Waiting 15 seconds for data...")
-    sleep(15)
+    target_url = "https://chartink.com/dashboard/208896"
+    println("🧭 Navigating to: $target_url")
+    ChromeDevToolsLite.goto(page, target_url)
 
-    # Extract Data
-    js = """
+    # Wait for the dashboard JS to render the tables
+    println("⏳ Waiting for data to render...")
+    sleep(8) 
+
+    # Extract data
+    println("⛏️ Extracting table data...")
+    extract_js = """
     (() => {
-        const res = [];
-        document.querySelectorAll(".card, .panel").forEach((c, i) => {
-            let t = c.querySelector('.card-header, .panel-heading')?.innerText.trim() || "Scan_" + i;
-            let h = Array.from(c.querySelectorAll("thead th")).map(x => x.innerText.trim());
-            let r = [];
-            
-            c.querySelectorAll("tbody tr").forEach(tr => {
-                let d = Array.from(tr.querySelectorAll("td"));
-                // Only keep rows with actual data columns
-                if(d.length > 1) r.push(d.map(x => x.innerText.trim()));
-            });
-
-            // Save if headers exist (even if rows are empty, so we verify it ran)
-            if(h.length > 0) res.push({title: t, headers: h, rows: r});
+        const rows = document.querySelectorAll("table tr");
+        return Array.from(rows).map(row => {
+            const cells = row.querySelectorAll("th, td");
+            return Array.from(cells).map(c => c.innerText.trim()).join(" | ");
         });
-        return JSON.stringify(res);
     })()
     """
     
-    data = JSON.parse(evaluate(browser, js))
-    ts = Dates.format(now(Dates.UTC) + Dates.Hour(5) + Dates.Minute(30), "yyyy-mm-dd HH:MM:SS")
-
-    println(">> Found $(length(data)) scans.")
-
-    for s in data
-        # Clean Filename
-        clean_name = replace(s["title"], r"\(.*?\)" => "", r"[^a-zA-Z0-9]" => "_", r"__+" => "_")
-        filename = "scan_" * strip(clean_name, ['_']) * ".csv"
-        path = joinpath(OUTPUT_DIR, filename)
-        
-        # Skip empty scans (don't save empty files)
-        if isempty(s["rows"]) 
-            println("   -- Empty: $(s["title"])")
-            continue 
+    result = ChromeDevToolsLite.evaluate(page, extract_js)
+    
+    # Save to file for the Artifact Upload step
+    output_file = "output_data.txt"
+    open(output_file, "w") do io
+        println(io, "Scrape Timestamp: $(now())")
+        println(io, "-" ^ 50)
+        for row in result
+            println(io, row)
         end
-        
-        # Fix Headers
-        rows = s["rows"]; raw_h = s["headers"]
-        n = maximum(length.(rows))
-        while length(raw_h) < n push!(raw_h, "Col_$(length(raw_h)+1)") end
-        
-        # Save
-        df = DataFrame([r[i] for r in rows, i in 1:n], Symbol.(raw_h[1:n]))
-        insertcols!(df, 1, :Scraped_At => ts)
-        CSV.write(path, df; append=isfile(path), writeheader=!isfile(path))
-        println("   ✔ Saved: $(s["title"])")
     end
+
+    println("✅ Success! Data written to $output_file")
+    println("Preview: $(first(result))")
+
+catch e
+    println("💥 Error occurred: $e")
+    exit(1) # Fail the action if the script crashes
+
 finally
-    try close(browser) catch; end
+    ChromeDevToolsLite.close(page)
 end
