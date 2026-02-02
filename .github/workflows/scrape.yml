@@ -1,40 +1,40 @@
-name: Chartink CSV Logger
+name: Daily Chartink Scrape 📈
 
 on:
+  workflow_dispatch: # Allows you to manually trigger it from the Actions tab
   schedule:
-    - cron: '*/5 * * * *'  # Runs every 5 minutes
-  workflow_dispatch:      # Manual trigger
-
-permissions:
-  contents: write
+    - cron: '30 3 * * 1-5' # Runs at 09:00 AM IST (UTC+5:30) on weekdays
 
 jobs:
-  scrape-and-commit:
+  scrape-dashboard:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout Code
+      - name: Check out repository 🛎️
         uses: actions/checkout@v4
 
-      - name: Set up Julia
-        uses: julia-actions/setup-julia@v1
+      - name: Set up Julia 🟣
+        uses: julia-actions/setup-julia@v2
         with:
-          version: '1'
+          version: '1.10'
 
-      - name: Cache Julia Artifacts
-        uses: julia-actions/cache@v1
-
-      - name: Run Scraper
-        run: julia scraper.jl
-
-      - name: Commit and Push Data
+      - name: Install Dependencies 📦
         run: |
-          git config user.name "Chartink Bot"
-          git config user.email "actions@github.com"
+          julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl"); Pkg.instantiate()'
+
+      - name: Start Headless Chrome 🚀
+        run: |
+          # We start Chrome in the background (&) on port 9222
+          google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu &
           
-          # Add only the scans folder
-          git add scans/*.csv
-          
-          # Commit only if data changed
-          git diff --staged --quiet || git commit -m "Auto-update scans data [skip ci]"
-          git push
+          # Give it a few seconds to wake up
+          sleep 5
+
+      - name: Run Scraper 🕸️
+        run: julia --project=. scraper.jl
+
+      - name: Upload Scraped Data 📤
+        uses: actions/upload-artifact@v4
+        with:
+          name: chartink-data
+          path: output_data.txt
