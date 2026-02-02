@@ -13,6 +13,7 @@ catch
 end
 
 # --- CONFIGURATION ---
+# Run 3 loops per job (approx 90s apart) to get high-frequency data
 LOOPS_PER_RUN = 3
 SLEEP_BETWEEN_LOOPS = 40 
 MAX_WAIT_SECONDS = 60  
@@ -21,21 +22,22 @@ MAX_WAIT_SECONDS = 60
 OUTPUT_DIR = "scans"
 if !isdir(OUTPUT_DIR)
     mkdir(OUTPUT_DIR)
+    println("   Created folder: $OUTPUT_DIR")
 end
 
 # --- HELPER: CLEAN FILENAMES ---
 function get_clean_filename(raw_text)
-    # Remove time pattern like (10:30 AM)
+    # 1. Remove time patterns like (10:30 AM) from the filename
     time_regex = r"\(?\d{1,2}:\d{2}\s?(?:AM|PM|am|pm)?\)?"
     clean_name = replace(raw_text, time_regex => "")
     
-    # Clean special chars
+    # 2. Clean special characters to make it a valid filename
     clean_name = replace(clean_name, r"[^a-zA-Z0-9]" => "_") 
     clean_name = replace(clean_name, r"__+" => "_")          
     clean_name = strip(clean_name, ['_'])                    
     
     if isempty(clean_name) clean_name = "Unknown_Scan" end
-    return "scan_" * first(clean_name, 40) * ".csv"
+    return "scan_" * first(clean_name, 50) * ".csv"
 end
 
 # --- 2. LAUNCH CHROME ---
@@ -65,36 +67,44 @@ try
             reload(browser)
         end
 
-        println("   Waiting for tables...")
+        println("   Waiting for tables to load...")
         
         # --- 🚀 ROBUST SMART WAIT LOGIC ---
         for i in 1:MAX_WAIT_SECONDS
+            # We check the status of specific elements to know if they are done
             status = evaluate(browser, """
                 (() => {
-                    let containers = document.querySelectorAll('.card, .panel');
-                    let total = containers.length;
-                    let ready = 0;
-                    containers.forEach(c => {
-                        let text = c.innerText;
-                        let has_rows = c.querySelectorAll('tbody tr').length > 0;
-                        let is_empty = text.includes("No records") || text.includes("No stocks match");
-                        let is_processing = text.includes("Processing");
-                        if (!is_processing && (has_rows || is_empty)) ready++;
-                    });
-                    return { total: total, ready: ready };
+                    try {
+                        let containers = document.querySelectorAll('.card, .panel');
+                        let total = containers.length;
+                        let ready = 0;
+                        containers.forEach(c => {
+                            let text = c.innerText;
+                            let has_rows = c.querySelectorAll('tbody tr').length > 0;
+                            // Check for "No records" OR "No stocks match"
+                            let is_empty = text.includes("No records") || text.includes("No stocks match");
+                            let is_processing = text.includes("Processing");
+                            
+                            // Ready if: Not Processing AND (Has Rows OR Is Empty)
+                            if (!is_processing && (has_rows || is_empty)) ready++;
+                        });
+                        return { total: total, ready: ready };
+                    } catch(e) {
+                        return { error: true };
+                    }
                 })()
             """)
             
-            # FIX: Check if status is valid before accessing keys
+            # 🛡️ SAFETY CHECK: If browser is busy, ignore this tick
             if status === nothing || !haskey(status, "ready")
                 if i % 5 == 0
-                    println("      ⚠ Page loading... (JS not ready)")
+                    println("      ⚠ Page loading... (JS waiting)")
                 end
                 sleep(1)
                 continue
             end
             
-            # Now it is safe to read keys
+            # EXIT CONDITION: All tables found are ready
             if status["ready"] >= status["total"] && status["total"] > 0
                 println("   ✔ All $(status["total"]) tables loaded in $(i)s.")
                 break
@@ -107,10 +117,12 @@ try
         end
         
         # --- EXTRACTION ---
+        # This JS script runs inside the browser to get the clean data
         js_script = """
             (() => {
                 const results = [];
                 document.querySelectorAll(".card, .panel").forEach((card, index) => {
+                    // 1. Scrap Table Title
                     let title = "Scan_" + index;
                     let headerEl = card.querySelector('.card-header, .panel-heading');
                     if (headerEl) title = headerEl.innerText.trim();
@@ -118,15 +130,21 @@ try
                     let table = card.querySelector("table");
                     if (!table) return;
                     
+                    // 2. Scrap Headers
                     let headers = Array.from(table.querySelectorAll("thead th")).map(th => th.innerText.trim());
                     let rows = [];
                     
+                    // 3. Scrap Table Data (ignoring 'No records' rows)
                     table.querySelectorAll("tbody tr").forEach(tr => {
                         let tds = Array.from(tr.querySelectorAll("td"));
-                        if (tds.length > 1) rows.push(tds.map(td => td.innerText.trim()));
+                        // Valid rows usually have multiple columns. 'No records' often spans across.
+                        if (tds.length > 1) {
+                            rows.push(tds.map(td => td.innerText.trim()));
+                        }
                     });
 
-                    if (rows.length > 0) {
+                    // We add the result even if rows is empty, so we know it was checked
+                    if (headers.length > 0) {
                         results.push({ "raw_title": title, "headers": headers, "rows": rows });
                     }
                 });
@@ -140,7 +158,7 @@ try
             data = JSON.parse(data_str)
             scans = data["scans"]
             
-            # IST System Timestamp
+            # IST System Timestamp Calculation
             utc_now = now(Dates.UTC)
             ist_now = utc_now + Dates.Hour(5) + Dates.Minute(30)
             sys_timestamp = Dates.format(ist_now, "yyyy-mm-dd HH:MM:SS")
@@ -152,15 +170,17 @@ try
                 rows = scan["rows"]
                 raw_headers = scan["headers"]
                 
-                # Filename Logic
+                # 4. Create CSV File for Respective Title
+                # Logic: Clean the name (remove dynamic time) to keep one static file
                 target_filename = get_clean_filename(raw_title)
                 target_path = joinpath(OUTPUT_DIR, target_filename)
                 
-                println("      -> '$raw_title' => $target_filename")
-
                 # Prepare Headers
-                n_cols = maximum(length.(rows))
-                while length(raw_headers) < n_cols push!(raw_headers, "Col_$(length(raw_headers)+1)") end
+                # Ensure we have enough header columns for the data
+                n_cols = maximum(length.(rows); init=length(raw_headers))
+                while length(raw_headers) < n_cols 
+                    push!(raw_headers, "Col_$(length(raw_headers)+1)") 
+                end
                 safe_headers = Symbol.(raw_headers[1:n_cols])
                 
                 # Prepare Data
@@ -170,14 +190,17 @@ try
                     push!(clean_rows, r)
                 end
                 
-                df = DataFrame([r[i] for r in clean_rows, i in 1:n_cols], safe_headers)
-                
-                # Add Metadata
-                insertcols!(df, 1, :Scraped_At => sys_timestamp)
-                
-                # Save
-                file_exists = isfile(target_path)
-                CSV.write(target_path, df; append=file_exists, writeheader=!file_exists)
+                if !isempty(clean_rows)
+                    df = DataFrame([r[i] for r in clean_rows, i in 1:n_cols], safe_headers)
+                    
+                    # 5. Append Data at Respective Scrape Time (IST)
+                    insertcols!(df, 1, :Scraped_At => sys_timestamp)
+                    
+                    # Write to file (Append mode)
+                    file_exists = isfile(target_path)
+                    CSV.write(target_path, df; append=file_exists, writeheader=!file_exists)
+                    println("      -> Saved '$(raw_title)' to $target_filename")
+                end
             end
         end
         
