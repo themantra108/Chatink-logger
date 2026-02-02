@@ -13,14 +13,31 @@ catch
 end
 
 # --- CONFIGURATION ---
-SCAN_MAPPING = Dict(
-    "Atlas" => "atlas_data.csv",
-    "Breakout" => "breakouts.csv",
-    "Volume" => "volume_shocks.csv"
-)
+LOOPS_PER_RUN = 3
+SLEEP_BETWEEN_LOOPS = 40 
+MAX_WAIT_SECONDS = 60  
 
-MAX_WAIT_SECONDS = 120  
-STABILITY_REQUIRED = 5 
+# 📂 OUTPUT FOLDER
+OUTPUT_DIR = "scans"
+if !isdir(OUTPUT_DIR)
+    mkdir(OUTPUT_DIR)
+end
+
+# --- HELPER: CLEAN FILENAMES ---
+function get_clean_filename(raw_text)
+    # 1. Remove the time pattern like (10:30 AM) so filename is static
+    time_regex = r"\(?\d{1,2}:\d{2}\s?(?:AM|PM|am|pm)?\)?"
+    clean_name = replace(raw_text, time_regex => "")
+    
+    # 2. Clean up special characters
+    clean_name = replace(clean_name, r"[^a-zA-Z0-9]" => "_") 
+    clean_name = replace(clean_name, r"__+" => "_")          
+    clean_name = strip(clean_name, ['_'])                    
+    
+    if isempty(clean_name) clean_name = "Unknown_Scan" end
+
+    return "scan_" * first(clean_name, 40) * ".csv"
+end
 
 # --- 2. LAUNCH CHROME ---
 println(">> 2. Launching Chrome...")
@@ -33,123 +50,130 @@ for i in 1:20
 end
 if !ready error("Chrome failed to start") end
 
-# --- 3. SCRAPING LOGIC ---
-println(">> 3. Scraping Dashboard...")
+# --- 3. SCRAPING LOOP ---
+println(">> 3. Starting Intelligent Scraper...")
 browser = connect_browser()
-
-global last_row_count = 0
-global stable_ticks = 0
 
 try
     url = "https://chartink.com/dashboard/208896"
     goto(browser, url)
 
-    println("   Waiting for tables to fully load...")
-    
-    # Stability Loop
-    for i in 1:MAX_WAIT_SECONDS
-        current_count = evaluate(browser, """
+    for iter in 1:LOOPS_PER_RUN
+        println("\n--- ⚡ Iteration $iter / $LOOPS_PER_RUN ---")
+        
+        if iter > 1
+            println("   Refreshing page...")
+            reload(browser)
+        end
+
+        println("   Waiting for tables...")
+        
+        # --- SMART WAIT LOGIC ---
+        for i in 1:MAX_WAIT_SECONDS
+            status = evaluate(browser, """
+                (() => {
+                    let containers = document.querySelectorAll('.card, .panel');
+                    let total = containers.length;
+                    let ready = 0;
+                    containers.forEach(c => {
+                        let text = c.innerText;
+                        let has_rows = c.querySelectorAll('tbody tr').length > 0;
+                        let is_empty = text.includes("No records") || text.includes("No stocks match");
+                        let is_processing = text.includes("Processing");
+                        if (!is_processing && (has_rows || is_empty)) ready++;
+                    });
+                    return { total: total, ready: ready };
+                })()
+            """)
+            
+            if status["ready"] >= status["total"] && status["total"] > 0
+                println("   ✔ All $(status["total"]) tables loaded in $(i)s.")
+                break
+            end
+            sleep(1)
+        end
+        
+        # --- EXTRACTION ---
+        js_script = """
             (() => {
-                let rows = document.querySelectorAll('tbody tr');
-                let count = 0;
-                rows.forEach(r => {
-                    if (!r.innerText.includes("Loading")) count++;
+                const results = [];
+                document.querySelectorAll(".card, .panel").forEach((card, index) => {
+                    let title = "Scan_" + index;
+                    let headerEl = card.querySelector('.card-header, .panel-heading');
+                    if (headerEl) title = headerEl.innerText.trim();
+
+                    let table = card.querySelector("table");
+                    if (!table) return;
+                    
+                    let headers = Array.from(table.querySelectorAll("thead th")).map(th => th.innerText.trim());
+                    let rows = [];
+                    
+                    table.querySelectorAll("tbody tr").forEach(tr => {
+                        let tds = Array.from(tr.querySelectorAll("td"));
+                        if (tds.length > 1) rows.push(tds.map(td => td.innerText.trim()));
+                    });
+
+                    if (rows.length > 0) {
+                        results.push({ "raw_title": title, "headers": headers, "rows": rows });
+                    }
                 });
-                return count;
+                return JSON.stringify({ "scans": results });
             })()
-        """)
+        """
         
-        if current_count > 0 && current_count == last_row_count
-            global stable_ticks += 1
-        else
-            global stable_ticks = 0 
-        end
+        data_str = evaluate(browser, js_script)
         
-        global last_row_count = current_count
-        
-        if i % 5 == 0
-            println("      Time: $(i)s | Rows found: $current_count | Stable for: $(stable_ticks)s")
-        end
-
-        if stable_ticks >= STABILITY_REQUIRED
-            println("   ✔ Data stabilized. Proceeding to extract.")
-            break
-        end
-        sleep(1)
-    end
-    sleep(2)
-
-    # --- EXTRACTION ---
-    js_script = """
-        (() => {
-            const results = [];
-            document.querySelectorAll("table").forEach((table, index) => {
-                const rows = Array.from(table.querySelectorAll("tbody tr")).map(tr => 
-                    Array.from(tr.querySelectorAll("td")).map(td => td.innerText.trim())
-                );
+        if data_str !== nothing
+            data = JSON.parse(data_str)
+            scans = data["scans"]
+            
+            # IST System Timestamp
+            utc_now = now(Dates.UTC)
+            ist_now = utc_now + Dates.Hour(5) + Dates.Minute(30)
+            sys_timestamp = Dates.format(ist_now, "yyyy-mm-dd HH:MM:SS")
+            
+            println("   💾 Processing $(length(scans)) active scans...")
+            
+            for scan in scans
+                raw_title = scan["raw_title"]
+                rows = scan["rows"]
+                raw_headers = scan["headers"]
                 
-                let title = "Scan_" + (index + 1);
-                let parent = table.closest('.card, .panel');
-                if (parent) {
-                    let header = parent.querySelector('.card-header, .panel-heading');
-                    if (header) title = header.innerText.trim();
-                }
-                results.push({ "title": title, "rows": rows });
-            });
-            return JSON.stringify({ "scans": results });
-        })()
-    """
-    
-    data_str = evaluate(browser, js_script)
-    
-    if data_str !== nothing
-        data = JSON.parse(data_str)
-        scans = data["scans"]
-        
-        # --- 🕒 TIMEZONE FIX (UTC -> IST) ---
-        # GitHub runs on UTC. We add 5h 30m to get IST.
-        utc_now = now(Dates.UTC)
-        ist_now = utc_now + Dates.Hour(5) + Dates.Minute(30)
-        timestamp = Dates.format(ist_now, "yyyy-mm-dd HH:MM:SS")
-        
-        println(">> Found $(length(scans)) Scans (Time: $timestamp IST)...")
-        
-        for scan in scans
-            title = scan["title"]
-            rows = scan["rows"]
-            
-            if length(rows) == 0 
-                println("   ⚠ Skipping '$title' (No Data)")
-                continue
-            end
+                # Clean name for file (removes time from filename)
+                target_filename = get_clean_filename(raw_title)
+                target_path = joinpath(OUTPUT_DIR, target_filename)
+                
+                println("      -> '$raw_title' => $target_filename")
 
-            target_file = "other_scans.csv"
-            for (k, v) in SCAN_MAPPING
-                if occursin(k, title) target_file = v; break; end
+                # Prepare Headers
+                n_cols = maximum(length.(rows))
+                while length(raw_headers) < n_cols push!(raw_headers, "Col_$(length(raw_headers)+1)") end
+                safe_headers = Symbol.(raw_headers[1:n_cols])
+                
+                # Prepare Data
+                clean_rows = []
+                for r in rows
+                    while length(r) < n_cols push!(r, "") end
+                    push!(clean_rows, r)
+                end
+                
+                df = DataFrame([r[i] for r in clean_rows, i in 1:n_cols], safe_headers)
+                
+                # Add Metadata (Only System Time)
+                insertcols!(df, 1, :Scraped_At => sys_timestamp)
+                
+                # Save
+                file_exists = isfile(target_path)
+                CSV.write(target_path, df; append=file_exists, writeheader=!file_exists)
             end
-            
-            println("   📝 Saving '$title' -> '$target_file'")
-
-            n_cols = maximum(length.(rows))
-            clean_rows = []
-            for r in rows
-                while length(r) < n_cols push!(r, "") end
-                push!(clean_rows, r)
-            end
-            
-            headers = Symbol.(["Col_$i" for i in 1:n_cols])
-            df = DataFrame([r[i] for r in clean_rows, i in 1:n_cols], headers)
-            
-            insertcols!(df, 1, :Scraped_At => timestamp)
-            insertcols!(df, 2, :Scan_Name => title)
-            
-            file_exists = isfile(target_file)
-            CSV.write(target_file, df; append=file_exists, writeheader=!file_exists)
         end
-        println("\n✅ Data saved locally.")
-    else
-        println("❌ No data found on page.")
+        
+        if iter < LOOPS_PER_RUN
+            println("   ⏳ Sleeping $(SLEEP_BETWEEN_LOOPS)s...")
+            sleep(SLEEP_BETWEEN_LOOPS)
+        end
     end
+    println("\n✅ Job Complete.")
 
 finally
     try close(browser) catch; end
