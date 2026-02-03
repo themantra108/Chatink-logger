@@ -14,7 +14,8 @@ jobs:
       - name: Check out repository 🛎️
         uses: actions/checkout@v4
 
-      - name: Set up Julia 🟣
+      # 🟣 UPDATE: Using '1' for the latest stable version
+      - name: Set up Julia (Latest) 🚀
         uses: julia-actions/setup-julia@v2
         with:
           version: '1'
@@ -47,7 +48,7 @@ jobs:
           else
             git commit -m "📦 Init: Generated Julia dependency files"
             
-            # 🛑 THE FIX: Pull latest changes before pushing to avoid rejection!
+            # 🛡️ REBASE: Crucial to prevent "rejected" push errors
             git pull --rebase
             
             git push
