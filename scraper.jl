@@ -1,28 +1,26 @@
 using ChromeDevToolsLite
 using Dates
 
-# 🕒 Function for IST? Simple and type-stable!
+# 🕒 Precise Time function
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-println("🚀 Julia Scraper initializing... Time to eat some data! 🍽️")
+println("🚀 Julia Scraper: Initializing Production Protocol... 🏭")
 
 try
-    # Connection? Fast. ⚡
     page = ChromeDevToolsLite.connect_browser() 
-    println("✅ Connected! Chrome is listening.")
+    println("✅ Chrome Connected.")
 
     target_url = "https://chartink.com/dashboard/208896"
-    println("🧭 Warp drive to: $target_url")
+    println("🧭 Navigating to dashboard...")
     ChromeDevToolsLite.goto(page, target_url)
 
-    # Allow the JS heavy lifting to finish...
-    println("⏳ Letting the DOM simmer for 20s...")
+    # ⏳ Wait for Vue.js to render everything
+    println("⏳ Waiting 20s for DOM stabilization...")
     sleep(20)
 
-    println("⛏️ Mining diamonds (data)...")
+    println("⛏️ Extracting Clean Data...")
     
-    # 🧠 THE BRAIN: We do the filtering right in the JS execution context.
-    # Why bring garbage into Julia just to GC it? Leave it in V8!
+    # 🛡️ SAFE JS: Using concatenation (+) to avoid '$' parse errors in Julia
     extract_js = """
     (() => {
         const tables = document.querySelectorAll("table");
@@ -31,38 +29,66 @@ try
         let allRows = [];
 
         tables.forEach(table => {
-            // 🔍 Find the Widget Name (The Metadata!)
-            // We traverse up the DOM tree—Julia would love this tree traversal!
             let widgetName = "Unknown Widget";
-            const container = table.closest('.card, .panel, .box, .widget-content, div[class*="widget"]');
             
-            if (container) {
-                const header = container.querySelector('.card-header, .panel-heading, .card-title, h3, h4, h5, .widget-title');
-                if (header) {
-                    widgetName = header.innerText.replace(/[\\r\\n]+/g, " ").trim();
+            // 🏹 LOGIC: Climb up, then look backwards for the real title
+            let current = table;
+            let depth = 0;
+            
+            // 1. Climb up to find the container
+            while (current && depth < 6) {
+                let sibling = current.previousElementSibling;
+                
+                // 2. Walk backwards through siblings (max 5 steps)
+                let foundTitle = false;
+                for (let i = 0; i < 5; i++) {
+                    if (!sibling) break;
+                    
+                    let text = sibling.innerText.trim();
+                    
+                    // 🛡️ SMART FILTER: Skip empty, "Loading", or "Error" messages
+                    if (text.length > 0 && 
+                        !text.includes("Loading") && 
+                        !text.includes("Error while loading")) {
+                        
+                        // ✅ FOUND IT!
+                        // Format: "Mod 5_day_Check\n3rd Feb..." -> Take first line
+                        widgetName = text.split('\\n')[0].trim();
+                        foundTitle = true;
+                        break;
+                    }
+                    sibling = sibling.previousElementSibling;
                 }
+                
+                if (foundTitle) break;
+                current = current.parentElement;
+                depth++;
             }
-
+            
+            // --- Standard Row Extraction ---
             const rows = table.querySelectorAll("tr");
             
             const cleanRows = Array.from(rows).map(row => {
                 const cells = row.querySelectorAll("th, td");
                 if (cells.length === 0) return null; 
 
-                // 🛡️ The Shield: Block the "Sort By" UI text
+                // 🛡️ Filter Headers and Garbage
                 const rowText = row.innerText;
-                if (rowText.includes("Sort table by") || rowText.includes("Clause")) return null;
+                if (rowText.includes("Sort table by") || 
+                    rowText.includes("Clause") || 
+                    rowText.includes("Symbol") ||  
+                    rowText.includes("No data")) return null;
 
                 const safeWidget = widgetName.replace(/"/g, '""');
 
                 const cellData = Array.from(cells).map(c => {
-                     let text = c.innerText.trim();
-                     text = text.replace(/"/g, '""'); 
-                     return `"\${text}"`;
+                    let text = c.innerText.trim();
+                    text = text.replace(/"/g, '""'); 
+                    return '"' + text + '"'; // Use + instead of dollar sign
                 }).join(",");
                 
-                // 💎 The Gem: "Widget", "Data", "Data"...
-                return `"\${safeWidget}",\${cellData}`;
+                // Final CSV Row
+                return '"' + safeWidget + '",' + cellData;
             });
 
             allRows = allRows.concat(cleanRows.filter(r => r));
@@ -75,11 +101,10 @@ try
     result = ChromeDevToolsLite.evaluate(page, extract_js)
     data_string = isa(result, Dict) && haskey(result, "value") ? result["value"] : result
 
-    # 📂 Temp file strategy to avoid Git locking conflicts (Smart!)
     temp_file = "new_chunk.csv"
     
     if data_string == "NO DATA FOUND" || isempty(data_string)
-        println("⚠️ 0 Rows. The dashboard might be sleeping.")
+        println("⚠️ 0 Rows Found (Dashboard might be empty).")
         exit(1)
     else
         rows = split(data_string, "\n")
@@ -88,17 +113,16 @@ try
         open(temp_file, "w") do io
             count = 0
             for row in rows
-                # One last sanity check using Julia's string powers
                 if length(row) > 10 
                     println(io, "\"$(current_time)\",$row")
                     count += 1
                 end
             end
-            println("✅ BOOM! Saved $count clean rows to $temp_file")
+            println("✅ Success! Captured $count clean rows.")
         end
     end
 
 catch e
-    println("💥 Exception caught! Stacktrace incoming...")
+    println("💥 Error: $e")
     rethrow(e)
 end
