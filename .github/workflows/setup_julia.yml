@@ -1,0 +1,51 @@
+name: One-Time Julia Setup 🛠️
+
+on:
+  workflow_dispatch: # Manual trigger only
+
+permissions:
+  contents: write
+
+jobs:
+  generate-tomls:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository 🛎️
+        uses: actions/checkout@v4
+
+      - name: Set up Julia 🟣
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+
+      - name: Generate Dependency Files 📦
+        run: |
+          # We run the Pkg commands to generate the TOML files
+          julia -e '
+            using Pkg
+            Pkg.activate(".")
+            
+            # Add your packages here
+            Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl")
+            Pkg.add("Dates")
+            
+            # Lock the versions
+            Pkg.resolve()
+            Pkg.instantiate()
+          '
+
+      - name: Commit TOML files back to Repo 💾
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add Project.toml Manifest.toml
+          
+          # Only commit if files changed/created
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "📦 Init: Generated Julia dependency files"
+            git push
+          fi
