@@ -17,7 +17,7 @@ jobs:
       - name: Set up Julia 🟣
         uses: julia-actions/setup-julia@v2
         with:
-          version: '1.10'
+          version: '1'
 
       - name: Generate Dependency Files 📦
         run: |
@@ -41,9 +41,14 @@ jobs:
           
           git add Project.toml Manifest.toml
           
+          # Only commit if files changed/created
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
             git commit -m "📦 Init: Generated Julia dependency files"
+            
+            # 🛑 THE FIX: Pull latest changes before pushing to avoid rejection!
+            git pull --rebase
+            
             git push
           fi
