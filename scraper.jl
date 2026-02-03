@@ -1,24 +1,22 @@
 using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 
 # --- 🧱 Configuration ---
-# Define URL + Folder Name pairs
-const DASHBOARDS = [
-    (url="https://chartink.com/dashboard/208896", folder="Stocks_Sectors"),
-    (url="https://chartink.com/dashboard/419640", folder="Market_Condition")
+const TARGET_URLS = [
+    "https://chartink.com/dashboard/208896",
+    "https://chartink.com/dashboard/419640"
 ]
-
 const OUTPUT_ROOT = "chartink_data"
 
 struct WidgetTable
     name::String
     clean_name::String
     data::DataFrame
-    subfolder::String  # 🆕 Tracks which folder this belongs to
+    subfolder::String # 🆕 Dynamically assigned from Page Title
 end
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-# --- 🧠 JS Logic (Standard) ---
+# --- 🧠 JS Logic ---
 const JS_PAYLOAD = """
 (() => {
     try {
@@ -93,9 +91,8 @@ function safe_unwrap(res)
     isa(res, Dict) ? (haskey(res,"value") ? res["value"] : (haskey(res,"result") ? safe_unwrap(res["result"]) : res)) : res
 end
 
-# Updated: Accepts folder_name to tag widgets
 function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTable}
-    @info "🧠 Parsing $(Base.format_bytes(length(raw_csv))) for folder: $folder_name"
+    @info "🧠 Parsing widgets for folder: [$folder_name]"
     widgets = WidgetTable[]
     current_ts = get_ist()
     
@@ -140,7 +137,6 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
             seekstart(io)
             try
                 df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
-                # 🆕 Pass folder_name to struct
                 push!(widgets, WidgetTable(name, clean_name, df, folder_name))
             catch; end
         end
@@ -149,12 +145,10 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
 end
 
 function save_widget(w::WidgetTable)
-    # 🆕 Construct path with Subfolder
     folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
-    mkpath(folder_path) # Ensure subfolder exists
+    mkpath(folder_path)
     
     path = joinpath(folder_path, w.clean_name * ".csv")
-    
     try
         if isfile(path)
             old_df = CSV.read(path, DataFrame)
@@ -165,18 +159,31 @@ function save_widget(w::WidgetTable)
         else
             CSV.write(path, w.data)
         end
-        @info "  💾 Saved: $(w.subfolder) / $(w.clean_name)"
+        @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name)"
     catch e
-        @warn "Schema Conflict for $(w.clean_name). Resetting file."
+        @warn "Schema Conflict for $(w.clean_name). Overwriting."
         CSV.write(path, w.data)
     end
 end
 
-function process_dashboard(page, dashboard)
-    url = dashboard.url
-    folder = dashboard.folder
+function get_dashboard_name(page)
+    # 🆕 Extract Title from Browser
+    raw_title = ChromeDevToolsLite.evaluate(page, "document.title") |> safe_unwrap
+    if isnothing(raw_title) || raw_title == ""; return "Unknown_Dashboard"; end
     
-    @info "🧭 Navigating to: $url (Folder: $folder)"
+    # Clean: "Atlas - Chartink.com" -> "Atlas"
+    clean_title = replace(raw_title, " - Chartink.com" => "")
+    clean_title = replace(clean_title, " - Chartink" => "")
+    
+    # Sanitize for File System (remove : / \ etc)
+    fs_safe_name = replace(clean_title, r"[^a-zA-Z0-9 \-_]" => "")
+    fs_safe_name = replace(strip(fs_safe_name), " " => "_")
+    
+    return isempty(fs_safe_name) ? "Dashboard_Unknown" : fs_safe_name
+end
+
+function process_dashboard(page, url)
+    @info "🧭 Navigating to: $url"
     ChromeDevToolsLite.evaluate(page, "window._data = null;")
     
     retry_nav = retry(() -> ChromeDevToolsLite.goto(page, url), delays=[2.0, 5.0, 10.0])
@@ -187,7 +194,11 @@ function process_dashboard(page, dashboard)
         return WidgetTable[]
     end
     
-    sleep(5)
+    sleep(5) # Network Settle
+    
+    # 🆕 Determine Folder Name dynamically
+    folder_name = get_dashboard_name(page)
+    @info "🏷️ Identified Dashboard: $folder_name"
     
     for i in 1:60
         res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0") |> safe_unwrap
@@ -221,8 +232,8 @@ function process_dashboard(page, dashboard)
         print(buf, chunk)
     end
     
-    # 🆕 Pass folder name to parser
-    return parse_widgets(String(take!(buf)), folder)
+    # Pass the dynamic folder name
+    return parse_widgets(String(take!(buf)), folder_name)
 end
 
 function main()
@@ -232,13 +243,13 @@ function main()
         @info "🔌 Connecting to Chrome..."
         page = ChromeDevToolsLite.connect_browser()
         
-        for db in DASHBOARDS
-            @info "--- [TARGET] $(db.folder) ---"
-            widgets = process_dashboard(page, db)
+        for url in TARGET_URLS
+            @info "--- [TARGET] $url ---"
+            widgets = process_dashboard(page, url)
             
             if !isempty(widgets)
                 widgets .|> save_widget
-                @info "✅ Success."
+                @info "✅ Dashboard Complete."
             end
         end
         
