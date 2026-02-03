@@ -1,7 +1,11 @@
 using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 
 # --- 🧱 Configuration ---
-const TARGET_URL = "https://chartink.com/dashboard/208896"
+# Now a Vector of URLs instead of a single string
+const TARGET_URLS = [
+    "https://chartink.com/dashboard/208896",
+    "https://chartink.com/dashboard/419640"
+]
 const OUTPUT_DIR = "chartink_data"
 
 struct WidgetTable
@@ -12,7 +16,7 @@ end
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-# --- 🧠 JS Logic: The "Sort by" Purge ---
+# --- 🧠 JS Logic (Header Cleaner + Strict Newlines) ---
 const JS_PAYLOAD = """
 (() => {
     try {
@@ -20,6 +24,7 @@ const JS_PAYLOAD = """
         const cleanBody = (txt) => txt ? txt.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         const cleanHeader = (txt) => txt ? txt.replace(/Sort table by.*/gi, "").trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
 
+        // 1️⃣ STANDARD TABLE SCAN
         const nodes = document.querySelectorAll("table, div.dataTables_wrapper");
         nodes.forEach((node, i) => {
             let name = "Unknown Widget " + i;
@@ -55,6 +60,7 @@ const JS_PAYLOAD = """
             });
         });
 
+        // 2️⃣ SPECIAL HUNTER (Breadth/Condition)
         const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6, div.card-header");
         headings.forEach(h => {
             let title = h.innerText.trim();
@@ -89,10 +95,10 @@ function safe_unwrap(res)
     isa(res, Dict) ? (haskey(res,"value") ? res["value"] : (haskey(res,"result") ? safe_unwrap(res["result"]) : res)) : res
 end
 
-function setup_page()
-    @info "🔌 Connecting..."
-    page = ChromeDevToolsLite.connect_browser()
-    ChromeDevToolsLite.goto(page, TARGET_URL)
+# Modified to accept a URL argument
+function process_dashboard(page, url)
+    @info "🧭 Navigating to: $url"
+    ChromeDevToolsLite.goto(page, url)
     
     # Wait for tables
     for _ in 1:60
@@ -109,29 +115,30 @@ function setup_page()
         sleep(0.3)
     end
     sleep(3)
-    return page
-end
-
-function extract_data(page)
+    
+    # Extract
     @info "⚡ Extracting..."
-    # Enthusiast tip: Always JSON-encode JS logic to safely pass characters
     ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
     
     len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0") |> safe_unwrap
     len = try parse(Int, string(len_res)) catch; 0 end
     
-    if len == 0; error("No Data Found"); end
+    if len == 0
+        @warn "No data found on $url"
+        return WidgetTable[]
+    end
     
     buf = IOBuffer()
     for i in 0:50000:len
         chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))") |> safe_unwrap
         print(buf, chunk)
     end
-    return String(take!(buf))
+    
+    return parse_widgets(String(take!(buf)))
 end
 
 function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
-    @info "🧠 Parsing Data..."
+    @info "🧠 Parsing $(length(raw_csv)) bytes..."
     widgets = WidgetTable[]
     current_ts = get_ist()
     lines = split(replace(raw_csv, "\r" => ""), "\n")
@@ -189,7 +196,6 @@ function save_widget(w::WidgetTable)
         if isfile(path)
             old_df = CSV.read(path, DataFrame)
             final_df = vcat(old_df, w.data, cols=:union)
-            # Dedupe based on first two columns
             unique!(final_df, [names(final_df)[1], names(final_df)[2]])
             sort!(final_df, :Timestamp)
             CSV.write(path, final_df)
@@ -198,21 +204,35 @@ function save_widget(w::WidgetTable)
         end
         @info "  💾 Saved: $(w.clean_name)"
     catch e
-        @warn "Schema Mismatch for $(w.clean_name). Resetting file..."
-        CSV.write(path, w.data) # Overwrite on error to fix headers
+        @warn "Schema Conflict for $(w.clean_name). Resetting file."
+        CSV.write(path, w.data)
     end
 end
 
 function main()
     mkpath(OUTPUT_DIR)
-    # UNCOMMENT the line below for one run if you want to wipe old bad data:
-    # rm(OUTPUT_DIR, recursive=true, force=true); mkpath(OUTPUT_DIR)
     
     try
-        setup_page() |> extract_data |> parse_widgets .|> save_widget
-        @info "✅ Done."
+        @info "🔌 Connecting to Browser..."
+        page = ChromeDevToolsLite.connect_browser()
+        
+        # 🔄 Loop through all Target URLs
+        for url in TARGET_URLS
+            @info "--- Processing Dashboard: $url ---"
+            widgets = process_dashboard(page, url)
+            
+            if !isempty(widgets)
+                widgets .|> save_widget
+                @info "✅ Dashboard Complete."
+            else
+                @warn "⚠️ No widgets found on $url"
+            end
+        end
+        
+        @info "🎉 All Dashboards Scraped Successfully."
+        
     catch e
-        @error "Failed" exception=(e, catch_backtrace())
+        @error "Critical Failure" exception=(e, catch_backtrace())
         exit(1)
     end
 end
