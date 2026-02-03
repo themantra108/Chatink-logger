@@ -49,8 +49,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase
+          
+          # 1. Stage and Commit the NEW data LOCALLY first
           git add chartink_history.csv
           timestamp=$(date -u)
-          git commit -m "📈 Data: ${timestamp}" || echo "No changes"
+          git commit -m "📈 Data: ${timestamp}" || echo "No changes to commit"
+          
+          # 2. NOW pull any remote changes (rebase puts your commit on top)
+          git pull --rebase
+          
+          # 3. Finally, push the result
           git push
