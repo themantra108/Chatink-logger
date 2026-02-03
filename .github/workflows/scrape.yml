@@ -1,11 +1,15 @@
-name: Chartink Scraper (Every 5 Mins) 📈
+name: Chartink Scraper (24/7 Every 5 Mins) 📈
 
 on:
-  workflow_dispatch:      # Manual trigger
+  workflow_dispatch:      # Allows manual trigger
   schedule:
-    # 🕒 9:15 AM to 3:30 PM IST (Market Hours)
-    # UTC: 03:45 to 10:00 (approx)
-    - cron: '*/5 3-11 * * 1-5'
+    # 🕒 CRON SCHEDULE EXPLAINED:
+    # */5 = Every 5 minutes
+    # * = Every hour
+    # * = Every day
+    # * = Every month
+    # * = Every day of the week (Sun-Sat)
+    - cron: '*/5 * * * *'
 
 permissions:
   contents: write
@@ -29,10 +33,10 @@ jobs:
 
       - name: Start Headless Chrome 🚀
         run: |
-          # Launch Chrome with "Real User" flags
+          # Launch Chrome with "Real User" flags to bypass detection
           google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" &
           
-          # Wait for Chrome to be ready
+          # Wait loop to ensure Chrome is ready
           echo "Waiting for Chrome..."
           for i in {1..30}; do
             if curl -s http://127.0.0.1:9222/json/version > /dev/null; then
@@ -47,21 +51,21 @@ jobs:
       - name: Run Scraper 🕸️
         run: julia --project=. scraper.jl
 
-      # Optional: Upload debug file if something goes wrong
+      # Optional: Upload debug file if the script crashes
       - name: Upload Debug Artifact 🐞
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: debug-html
           path: debug_error.html
           if-no-files-found: ignore
 
-      - name: Commit and Push 💾
+      - name: Commit and Push Data 💾
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 1. Pull Latest History FIRST (Safe because we haven't touched the file yet)
+          # 1. Pull Latest History FIRST (Safe because we haven't touched chartink_history.csv yet)
           git pull --rebase
           
           # 2. Append the new chunk to the main history file
@@ -71,7 +75,7 @@ jobs:
             rm new_chunk.csv
             echo "✅ Data merged successfully."
           else
-            echo "⚠️ No new data chunk found to merge."
+            echo "⚠️ No new data chunk found to merge. Skipping commit."
             exit 0
           fi
           
