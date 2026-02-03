@@ -9,7 +9,7 @@ const TARGET_URLS = [
 ]
 const OUTPUT_ROOT = "chartink_data"
 
-# Pre-compiled Regex for date parsing
+# ⚡ Pre-compiled Regex & Typed Dictionary for speed
 const DATE_REGEX = r"(\d+)(?:st|nd|rd|th)?\s+([a-zA-Z]+)"
 const MONTH_MAP = Dict{SubString{String}, Int}(
     "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4, "May" => 5, "Jun" => 6,
@@ -26,7 +26,7 @@ end
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
 # ==============================================================================
-# 📅 DATE LOGIC
+# 📅 DATE & DEDUPE LOGIC
 # ==============================================================================
 
 function parse_chartink_date(date_str::AbstractString)
@@ -39,27 +39,49 @@ function parse_chartink_date(date_str::AbstractString)
 end
 
 function add_derived_columns!(df::DataFrame)
+    # 1. Scan_Date from Timestamp
     if "Timestamp" in names(df)
         df[!, :Scan_Date] = Date.(df[!, :Timestamp])
     end
 
+    # 2. Full_Date from "Date" column (Market Condition)
     if "Date" in names(df)
         nrows = nrow(df)
         full_dates = Vector{Union{Date, Missing}}(missing, nrows)
-        current_year = year(get_ist()) 
+        
+        scrape_date = Date(get_ist())
+        current_year = year(scrape_date)
         last_month = 0
         
+        # Optimization: Access column vector directly
+        date_col = df.Date
+        
         for i in 1:nrows
-            raw_val = string(df[i, "Date"])
+            raw_val = string(date_col[i])
             (day, mon) = parse_chartink_date(raw_val)
             if day == 0 || mon == 0; continue; end
             
             if last_month == 0; last_month = mon; end
             
+            # Logic 1: Standard Rollback (Dec -> Jan transition in list)
             if mon > (last_month + 6); current_year -= 1;
             elseif mon < (last_month - 6); current_year += 1; end
             
-            try; full_dates[i] = Date(current_year, mon, day); catch; end
+            # Logic 2: 🛡️ THE FUTURE GUARD 🛡️
+            # If we calculated a date that is > Today + 2 days (buffer), 
+            # we likely assumed the wrong year (e.g., reading "Dec 31" on "Jan 1").
+            # Auto-correct to previous year.
+            try
+                candidate_date = Date(current_year, mon, day)
+                if candidate_date > (scrape_date + Day(2))
+                     current_year -= 1
+                     candidate_date = Date(current_year, mon, day)
+                end
+                full_dates[i] = candidate_date
+            catch
+                # Invalid date handling
+            end
+            
             last_month = mon
         end
         df[!, :Full_Date] = full_dates
@@ -151,6 +173,7 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
     current_ts = get_ist()
     groups = Dict{String, Vector{String}}()
     
+    # ⚡ Efficient Stream Splitting
     for line in eachline(IOBuffer(raw_csv))
         if length(line) < 5 || !startswith(line, "\""); continue; end
         m = match(r"^\"([^\"]+)\"", line)
@@ -178,6 +201,7 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
         
         valid_count = 0
         for i in start_row:length(rows)
+            # Allow variance for footer rows
             if abs(length(split(rows[i], "\",\"")) - expected_cols) > 2; continue; end
             clean_row = replace(rows[i], r"^\"[^\"]+\"," => "")
             if !occursin(r"\"(Symbol|Name|Date)\"", clean_row)
@@ -198,7 +222,7 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
     return widgets
 end
 
-# 🔥 UPSERT ENGINE (Logic verified for 2nd Feb/1st Feb update scenario)
+# 🔥 ROBUST UPSERT: Ensures "Newest Version" of any date/entity wins
 function save_widget(w::WidgetTable)
     folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
     mkpath(folder_path)
@@ -208,31 +232,28 @@ function save_widget(w::WidgetTable)
         if isfile(path)
             old_df = CSV.read(path, DataFrame)
             
-            # 1. UNION: Combine Old History + New Updates
+            # 1. Combine
             combined_df = vcat(old_df, w.data, cols=:union)
             
-            # 2. SORT: Newest Scrapes go to the top
+            # 2. Sort Newest -> Oldest
             sort!(combined_df, :Timestamp, rev=true)
             
-            # 3. DEDUPE: Define what makes a row "unique"
+            # 3. Identify Deduplication Key
             dedupe_cols = Symbol[]
             
             if "Date" in names(combined_df)
-                # Scenario: Market Condition (Date-based)
-                # If "2nd Feb" appears in both Old and New, 'unique!' will see 
-                # the New one first (due to Sort) and discard the Old one.
+                # Key: The text "2nd Feb" itself
                 push!(dedupe_cols, :Date)
             else
-                # Scenario: Stock List (Symbol-based)
-                # Key = Symbol + Date (e.g., RELIANCE on 2026-02-04)
-                col2_name = names(combined_df)[2] # Usually Symbol
-                push!(dedupe_cols, Symbol(col2_name))
+                # Key: Symbol + The Date of Scrape
+                col2 = names(combined_df)[2] 
+                push!(dedupe_cols, Symbol(col2))
                 if "Scan_Date" in names(combined_df)
                     push!(dedupe_cols, :Scan_Date)
                 end
             end
             
-            # 4. EXECUTE REPLACE
+            # 4. Upsert (Keep first occurrence, which is Newest)
             unique!(combined_df, dedupe_cols)
             
             CSV.write(path, combined_df)
@@ -242,7 +263,7 @@ function save_widget(w::WidgetTable)
         end
         @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name)"
     catch e
-        @warn "Schema Conflict or Save Error for $(w.clean_name). Overwriting."
+        @warn "Schema/Save Error for $(w.clean_name). Overwriting."
         CSV.write(path, w.data)
     end
 end
@@ -270,12 +291,14 @@ function process_dashboard(page, url)
     folder_name = get_dashboard_name(page)
     @info "🏷️ Identified Dashboard: $folder_name"
     
+    # Dynamic Wait for Data
     for i in 1:60
         res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0") |> safe_unwrap
         if res == true; break; end
         sleep(1)
     end
     
+    # Scroll
     h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight") |> safe_unwrap
     h = isa(h, Number) ? h : 5000
     for s in 0:1000:h; ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)"); sleep(0.3); end
