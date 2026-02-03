@@ -12,7 +12,7 @@ function safe_unwrap(result)
             if isa(inner, Dict) && haskey(inner, "value")
                 return inner["value"]
             end
-        elseif haskey(result, "description") # Error description
+        elseif haskey(result, "description")
             return "JS_ERROR: " * result["description"]
         end
     end
@@ -51,11 +51,10 @@ function main()
 
         @info "⚡ DOM Ready. Running Scraper Logic..."
         
-        # 1️⃣ EXECUTE SCRAPER (With Try/Catch Safety)
+        # 1️⃣ EXECUTE SCRAPER (Clean Version - No Comments)
         setup_js = """
         (() => {
             try {
-                // Initialize to empty string to prevent 'undefined' errors
                 window._chartinkData = "";
                 
                 const tables = document.querySelectorAll("table");
@@ -71,7 +70,6 @@ function main()
                     let current = table;
                     let depth = 0;
                     
-                    // Sibling Hunter (Wrapped safely)
                     try {
                         while (current && depth < 6) {
                             let sibling = current.previousElementSibling;
@@ -91,7 +89,7 @@ function main()
                             depth++;
                         }
                     } catch (err) {
-                        console.log("Widget Name Error: " + err);
+                        console.log("Widget Name Error");
                     }
                     
                     const rows = table.querySelectorAll("tr");
@@ -124,45 +122,48 @@ function main()
                 return "DONE";
                 
             } catch (e) {
-                // 🚨 CATCH CRASHES AND SAVE ERROR
                 window._chartinkData = "JS_CRASH: " + e.toString();
                 return "ERROR";
             }
         })()
         """
-        result = ChromeDevToolsLite.evaluate(page, setup_js)
+        
+        # 🛡️ SECURITY: Remove literal newlines to prevent protocol errors
+        # We replace actual newlines in the string with spaces, 
+        # but keep \\n (literal backslash n) for JS logic intact.
+        setup_js_flat = replace(setup_js, "\n" => " ")
+        
+        result = ChromeDevToolsLite.evaluate(page, setup_js_flat)
         status = safe_unwrap(result)
         @info "🛠️ JS Setup Status: $status"
 
         # 2️⃣ FETCH DATA LENGTH
         @info "📦 Checking data length..."
         
-        len_js = """
-        (() => {
-            if (typeof window._chartinkData === 'undefined') return "UNDEFINED";
-            return window._chartinkData.length;
-        })()
-        """
+        len_js = "window._chartinkData ? window._chartinkData.length : 'UNDEFINED'"
         len_res = ChromeDevToolsLite.evaluate(page, len_js)
         total_len = safe_unwrap(len_res)
         
-        # Handle non-integer returns (errors)
-        if !isa(total_len, Int)
-            # Check if it is our crash report
-            data_res = ChromeDevToolsLite.evaluate(page, "window._chartinkData")
-            error_msg = safe_unwrap(data_res)
-            @warn "⚠️ JS Error Detected: $error_msg"
-            
-            # Save Debug HTML only if it's a real crash
-            if isa(error_msg, String) && startswith(error_msg, "JS_CRASH")
-                # Fall through to catch block to save HTML
-                throw(ErrorException("JavaScript Crashed: $error_msg"))
-            end
-            return
+        @info "📊 Raw Length Response: $total_len"
+        
+        if isa(total_len, String) && (total_len == "UNDEFINED" || startswith(total_len, "JS_CRASH"))
+             # Check for the error message
+             err_res = ChromeDevToolsLite.evaluate(page, "window._chartinkData")
+             err_msg = safe_unwrap(err_res)
+             @warn "⚠️ JS Execution Failed: $err_msg"
+             return
         end
 
-        @info "📊 Total Data Length: $total_len chars"
-        
+        # Ensure Int
+        if !isa(total_len, Int)
+            try
+                total_len = parse(Int, string(total_len))
+            catch
+                @warn "⚠️ Invalid length format."
+                return
+            end
+        end
+
         if total_len == 0
             @warn "⚠️ Data length is 0."
             return
@@ -201,20 +202,6 @@ function main()
 
     catch e
         @error "💥 Scraper Failed" exception=(e, catch_backtrace())
-        
-        # 📸 Debug Snapshot
-        if page !== nothing
-            try
-                html_res = ChromeDevToolsLite.evaluate(page, "document.documentElement.outerHTML")
-                html_content = safe_unwrap(html_res)
-                open("debug_error.html", "w") do f
-                    write(f, string(html_content))
-                end
-                @info "✅ Debug HTML saved."
-            catch err
-                @warn "Could not save debug HTML."
-            end
-        end
         exit(1)
     end
 end
