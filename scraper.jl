@@ -20,7 +20,7 @@ try
 
     println("⛏️ Extracting Clean Data...")
     
-    # 🛡️ SAFE JS: Using concatenation (+) to avoid '$' parse errors in Julia
+    # 🛡️ CLEAN JS: No comments, simple syntax, string concatenation (+)
     extract_js = """
     (() => {
         const tables = document.querySelectorAll("table");
@@ -31,28 +31,19 @@ try
         tables.forEach(table => {
             let widgetName = "Unknown Widget";
             
-            // 🏹 LOGIC: Climb up, then look backwards for the real title
             let current = table;
             let depth = 0;
             
-            // 1. Climb up to find the container
             while (current && depth < 6) {
                 let sibling = current.previousElementSibling;
                 
-                // 2. Walk backwards through siblings (max 5 steps)
                 let foundTitle = false;
                 for (let i = 0; i < 5; i++) {
                     if (!sibling) break;
                     
                     let text = sibling.innerText.trim();
                     
-                    // 🛡️ SMART FILTER: Skip empty, "Loading", or "Error" messages
-                    if (text.length > 0 && 
-                        !text.includes("Loading") && 
-                        !text.includes("Error while loading")) {
-                        
-                        // ✅ FOUND IT!
-                        // Format: "Mod 5_day_Check\n3rd Feb..." -> Take first line
+                    if (text.length > 0 && !text.includes("Loading") && !text.includes("Error while loading")) {
                         widgetName = text.split('\\n')[0].trim();
                         foundTitle = true;
                         break;
@@ -65,14 +56,12 @@ try
                 depth++;
             }
             
-            // --- Standard Row Extraction ---
             const rows = table.querySelectorAll("tr");
             
             const cleanRows = Array.from(rows).map(row => {
                 const cells = row.querySelectorAll("th, td");
                 if (cells.length === 0) return null; 
 
-                // 🛡️ Filter Headers and Garbage
                 const rowText = row.innerText;
                 if (rowText.includes("Sort table by") || 
                     rowText.includes("Clause") || 
@@ -84,10 +73,9 @@ try
                 const cellData = Array.from(cells).map(c => {
                     let text = c.innerText.trim();
                     text = text.replace(/"/g, '""'); 
-                    return '"' + text + '"'; // Use + instead of dollar sign
+                    return '"' + text + '"';
                 }).join(",");
                 
-                // Final CSV Row
                 return '"' + safeWidget + '",' + cellData;
             });
 
@@ -99,11 +87,22 @@ try
     """
     
     result = ChromeDevToolsLite.evaluate(page, extract_js)
+    
+    # 🚨 ERROR HANDLING: Check if Chrome returned an error object
+    if isa(result, Dict) && (haskey(result, "className") || haskey(result, "exceptionDetails"))
+        println("💥 JS Execution Error: $result")
+        exit(1) # Fail the job gracefully
+    end
+
+    # Unwrap the value if it's a valid result dict
     data_string = isa(result, Dict) && haskey(result, "value") ? result["value"] : result
 
     temp_file = "new_chunk.csv"
     
-    if data_string == "NO DATA FOUND" || isempty(data_string)
+    if !isa(data_string, String)
+        println("💥 Error: Expected String data, got $(typeof(data_string))")
+        exit(1)
+    elseif data_string == "NO DATA FOUND" || isempty(data_string)
         println("⚠️ 0 Rows Found (Dashboard might be empty).")
         exit(1)
     else
@@ -113,6 +112,7 @@ try
         open(temp_file, "w") do io
             count = 0
             for row in rows
+                # Basic validation
                 if length(row) > 10 
                     println(io, "\"$(current_time)\",$row")
                     count += 1
