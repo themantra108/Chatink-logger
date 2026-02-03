@@ -1,4 +1,4 @@
-name: Chartink Scrape (24/7) 📈
+name: Chartink Scraper (24/7) 📈
 
 on:
   workflow_dispatch:      # Allows manual trigger
@@ -16,19 +16,25 @@ jobs:
       - name: Check out repository 🛎️
         uses: actions/checkout@v4
 
-      - name: Set up Julia 🟣
+      # 🟣 UPDATE: Using '1' pulls the latest stable version automatically
+      - name: Set up Julia (Latest) 🚀
         uses: julia-actions/setup-julia@v2
         with:
-          version: '1.10'
+          version: '1' 
 
       # ⚡ CACHE: Saves ~2 mins per run
       - name: Cache Julia artifacts 💾
         uses: julia-actions/cache@v2
 
-      # 📦 INSTANTIATE: Fast install from Manifest.toml
+      # 📦 INSTANTIATE: Robust dependency install
       - name: Install Dependencies 📦
         run: |
-          julia --project=. -e 'using Pkg; Pkg.instantiate()'
+          julia --project=. -e '
+            using Pkg
+            Pkg.resolve()      # Fixes any manifest mismatches
+            Pkg.instantiate()  # Downloads all artifacts
+            Pkg.precompile()   # Compiles them before running
+          '
 
       - name: Start Headless Chrome 🚀
         run: |
