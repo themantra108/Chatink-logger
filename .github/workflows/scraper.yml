@@ -1,12 +1,9 @@
 name: Chartink Scraper (24/7) 📈
 
 on:
-  # 👇 MANUAL TRIGGER: This enables the "Run workflow" button
-  workflow_dispatch:
-  
-  # ⏰ AUTOMATIC TRIGGER: Runs every 5 minutes
+  workflow_dispatch:      # Allows manual trigger
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/5 * * * *' # Every 5 minutes
 
 permissions:
   contents: write
@@ -49,7 +46,6 @@ jobs:
       - name: Run Scraper 🕸️
         run: julia --project=. scraper.jl
 
-      # 💾 DATA COMMIT STEP (Indentation Fixed)
       - name: Commit and Push Data 💾
         run: |
           git config user.name "github-actions[bot]"
@@ -57,9 +53,11 @@ jobs:
           
           # 1. Check & Commit FIRST (Locks the data safely)
           if [ -d "chartink_data" ]; then
-             git add chartink_data/
+             # 🔧 FIX: "git add ." stages EVERYTHING (CSVs + Manifest.toml)
+             # This prevents the "unstaged changes" error during pull.
+             git add .
+             
              timestamp=$(date -u)
-             # Commit locally. If nothing changed, this is harmless.
              git commit -m "📈 Data Update: ${timestamp}" || echo "No changes to commit"
           else
              echo "⚠️ No data folder generated."
@@ -67,7 +65,6 @@ jobs:
           fi
           
           # 2. Pull Latest Changes (Rebase applies our commit ON TOP of remote)
-          # Since we committed, the "unstaged changes" error is gone.
           git pull --rebase
           
           # 3. Push to GitHub
