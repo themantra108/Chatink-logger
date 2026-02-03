@@ -1,4 +1,4 @@
-name: Chartink Scraper (24/7) 📈
+name: Chartink Scrape (24/7) 📈
 
 on:
   workflow_dispatch:      # Allows manual trigger
