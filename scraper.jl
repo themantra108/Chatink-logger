@@ -1,21 +1,10 @@
 using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 
 # ==============================================================================
-# 🧠 TYPE SYSTEM (The Julia Way)
+# 🧠 TYPE SYSTEM
 # ==============================================================================
 abstract type UpdateStrategy end
-
-"""
-Strategy for Stock Lists (e.g., Nifty 50, Top Gainers).
-Logic: Snapshot. If data exists for a specific Scan_Date, replace the entire block.
-"""
 struct SnapshotStrategy <: UpdateStrategy end
-
-"""
-Strategy for Time Series (e.g., Market Condition, Breadth).
-Logic: Smart Upsert. Compare rows; if data changed, insert new row with fresh timestamp.
-If data is identical to history, discard new scan to save space.
-"""
 struct TimeSeriesStrategy <: UpdateStrategy end
 
 struct WidgetTable{T <: UpdateStrategy}
@@ -30,12 +19,11 @@ end
 # 🧱 CONFIGURATION
 # ==============================================================================
 const TARGET_URLS = [
-    "https://chartink.com/dashboard/208896",  # Stocks / Sectors
-    "https://chartink.com/dashboard/419640"   # Market Condition / Breadth
+    "https://chartink.com/dashboard/208896",
+    "https://chartink.com/dashboard/419640"
 ]
 const OUTPUT_ROOT = "chartink_data"
 
-# ⚡ Performance: Pre-compile Regex and Dictionary
 const DATE_REGEX = r"(\d+)(?:st|nd|rd|th)?\s+([a-zA-Z]+)"
 const MONTH_MAP = Dict{SubString{String}, Int}(
     "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4, "May" => 5, "Jun" => 6,
@@ -51,14 +39,12 @@ get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 function parse_chartink_date(date_str::AbstractString)
     m = match(DATE_REGEX, date_str)
     if isnothing(m); return (0, 0); end
-    # Fast parsing
     day = parse(Int, m.captures[1])
     mon_str = titlecase(m.captures[2])[1:3]
     mon = get(MONTH_MAP, mon_str, 0)
     return (day, mon)
 end
 
-# Julian Dispatch: Determine Strategy based on Columns
 function determine_strategy(df::DataFrame)
     if "Date" in names(df)
         return TimeSeriesStrategy()
@@ -67,11 +53,9 @@ function determine_strategy(df::DataFrame)
     end
 end
 
-# Enrichment for TimeSeries (Calculates rigorous Full_Date)
 function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
     nrows = nrow(df)
     full_dates = Vector{Union{Date, Missing}}(missing, nrows)
-    
     scrape_date = Date(get_ist())
     current_year = year(scrape_date)
     last_month = 0
@@ -82,16 +66,12 @@ function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
         (day, mon) = parse_chartink_date(raw_val)
         if day == 0 || mon == 0; continue; end
         
-        # Initialize anchor
         if last_month == 0; last_month = mon; end
-        
-        # Detect Year Rollover (Jan -> Dec)
         if mon > (last_month + 6); current_year -= 1;
         elseif mon < (last_month - 6); current_year += 1; end
         
         try
             cand = Date(current_year, mon, day)
-            # 🛡️ Future Guard: If we inferred a date > Today + 2 days, rollback year
             if cand > (scrape_date + Day(2))
                  cand = Date(current_year - 1, mon, day)
                  current_year -= 1
@@ -103,7 +83,6 @@ function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
     df[!, :Full_Date] = full_dates
 end
 
-# Enrichment for Snapshot (Creates Scan_Date key)
 function enrich_dataframe!(df::DataFrame, ::SnapshotStrategy)
     if "Timestamp" in names(df)
         df[!, :Scan_Date] = Date.(df[!, :Timestamp])
@@ -111,42 +90,33 @@ function enrich_dataframe!(df::DataFrame, ::SnapshotStrategy)
 end
 
 # ==============================================================================
-# 💾 SMART SAVING (The Engine)
+# 💾 SAVING LOGIC
 # ==============================================================================
 
 function save_to_disk(w::WidgetTable, final_df::DataFrame)
     folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
     mkpath(folder_path)
     path = joinpath(folder_path, w.clean_name * ".csv")
-    
-    # Always ensure Newest Data is at Row 2 (LIFO)
     sort!(final_df, :Timestamp, rev=true)
     CSV.write(path, final_df)
-    @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name) ($(typeof(w.strategy)))"
+    @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name)"
 end
 
-# --- STRATEGY 1: SNAPSHOT (Block Replacement) ---
+# STRATEGY 1: Snapshot (Symbol List)
 function save_widget(w::WidgetTable{SnapshotStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
     if !isfile(path); save_to_disk(w, w.data); return; end
 
     old_df = CSV.read(path, DataFrame)
-    
     if "Scan_Date" in names(w.data)
-        # Identify dates present in the NEW data
         active_dates = unique(dropmissing(w.data, :Scan_Date).Scan_Date)
-        
-        # Remove ALL rows from old history that match these dates
-        # This effectively deletes the "stale" version of today/yesterday
         filter!(row -> ismissing(row.Scan_Date) || !(row.Scan_Date in active_dates), old_df)
     end
-    
-    # Insert New Block + Remaining History
     final_df = vcat(w.data, old_df, cols=:union)
     save_to_disk(w, final_df)
 end
 
-# --- STRATEGY 2: TIME SERIES (Smart Update) ---
+# STRATEGY 2: Time Series (Smart Update)
 function save_widget(w::WidgetTable{TimeSeriesStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
     if !isfile(path); save_to_disk(w, w.data); return; end
@@ -154,11 +124,9 @@ function save_widget(w::WidgetTable{TimeSeriesStrategy})
     old_df = CSV.read(path, DataFrame)
     new_df = w.data
     
-    # Smart Diffing: Check if content actually changed
     metadata_cols = ["Timestamp", "Full_Date", "Scan_Date"]
     content_cols = filter(n -> !(n in metadata_cols), names(new_df))
     
-    # Index old data (Date -> Row) for O(1) lookups
     old_map = Dict{String, DataFrameRow}()
     for row in eachrow(old_df)
         d_str = string(row.Date)
@@ -172,7 +140,6 @@ function save_widget(w::WidgetTable{TimeSeriesStrategy})
         
         if haskey(old_map, d_key)
             old_row = old_map[d_key]
-            # Check equality on content columns only
             is_changed = false
             for col in content_cols
                 val_new = hasproperty(new_row, col) ? new_row[col] : missing
@@ -181,26 +148,16 @@ function save_widget(w::WidgetTable{TimeSeriesStrategy})
                     is_changed = true; break;
                 end
             end
-            
-            # If data changed, we keep the NEW row (fresh timestamp)
-            # If data same, we drop NEW row (old row preserves original timestamp)
             if is_changed; push!(rows_to_keep, i); end
         else
-            # Brand new date
             push!(rows_to_keep, i)
         end
     end
     
     actual_updates = new_df[rows_to_keep, :]
-    
-    if isempty(actual_updates)
-        @info "  zzZ Skipped: $(w.clean_name) (No Data Changes)"
-        return
-    end
+    if isempty(actual_updates); return; end # Skip if no changes
 
     combined_df = vcat(actual_updates, old_df, cols=:union)
-    
-    # Dedupe: If we have [New, Old] for same date, Sort puts New on top, Unique removes Old.
     sort!(combined_df, :Timestamp, rev=true)
     unique!(combined_df, :Date)
     
@@ -272,12 +229,11 @@ const JS_PAYLOAD = """
 """
 
 function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTable}
-    @info "🧠 Parsing widgets for folder: [$folder_name]"
+    @info "🧠 Parsing widgets..."
     widgets = WidgetTable[]
     current_ts = get_ist()
     groups = Dict{String, Vector{String}}()
     
-    # 1. Stream Split (Memory Efficient)
     for line in eachline(IOBuffer(raw_csv))
         if length(line) < 5 || !startswith(line, "\""); continue; end
         m = match(r"^\"([^\"]+)\"", line)
@@ -285,14 +241,11 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
         push!(get!(groups, key, String[]), line)
     end
 
-    # 2. Process Groups
     for (name, rows) in groups
         clean_name = replace(name, r"[^a-zA-Z0-9]" => "_")[1:min(end,50)]
         header_idx = findfirst(l -> occursin(r"\",\"(Symbol|Name|Scan Name|Date)\"", l), rows)
-        
         io = IOBuffer()
         start_row, expected_cols = 1, 0
-        
         if !isnothing(header_idx)
             raw_header = replace(rows[header_idx], r"^\"[^\"]+\"," => "")
             println(io, "\"Timestamp\"," * raw_header)
@@ -303,7 +256,6 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
             println(io, "\"Timestamp\"," * join(["\"Col_$i\"" for i in 1:cols_count], ","))
             expected_cols = cols_count + 1
         end
-        
         valid_count = 0
         for i in start_row:length(rows)
             if abs(length(split(rows[i], "\",\"")) - expected_cols) > 2; continue; end
@@ -313,16 +265,12 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
                  valid_count += 1
             end
         end
-        
         if valid_count > 0
             seekstart(io)
             try
                 df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
-                
-                # 🧠 JULIA WAY: Strategy Pattern
                 strat = determine_strategy(df)
                 enrich_dataframe!(df, strat)
-                
                 push!(widgets, WidgetTable(name, clean_name, df, folder_name, strat))
             catch; end
         end
@@ -346,13 +294,17 @@ function process_dashboard(page, url)
     @info "🧭 Navigating to: $url"
     ChromeDevToolsLite.evaluate(page, "window._data = null;")
     
+    # 1. Reliable Navigation
     retry_nav = retry(() -> ChromeDevToolsLite.goto(page, url), delays=[2.0, 5.0, 10.0])
     try; retry_nav(); catch; @error "Failed to load $url"; return WidgetTable[]; end
     
+    # 2. Safety Sleep (5 seconds for full load)
     sleep(5) 
-    folder_name = get_dashboard_name(page)
-    @info "🏷️ Identified Dashboard: $folder_name"
     
+    folder_name = get_dashboard_name(page)
+    @info "🏷️ Dashboard: $folder_name"
+    
+    # 3. Tables Check
     for i in 1:60
         res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0")
         val = isa(res, Dict) ? res["value"] : res
@@ -360,11 +312,12 @@ function process_dashboard(page, url)
         sleep(1)
     end
     
+    # 4. Reliable Scrolling
     h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight")
     h_val = isa(h, Dict) ? h["value"] : h
     h_int = isa(h_val, Number) ? h_val : 5000
     for s in 0:1000:h_int; ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)"); sleep(0.3); end
-    sleep(3) 
+    sleep(3) # Post-scroll wait
     
     @info "⚡ Extracting..."
     ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
@@ -384,32 +337,27 @@ function process_dashboard(page, url)
     return parse_widgets(String(take!(buf)), folder_name)
 end
 
-function print_summary()
-    @info "📊 --- MISSION REPORT ---"
-    if !isdir(OUTPUT_ROOT); return; end
-    for (root, dirs, files) in walkdir(OUTPUT_ROOT)
-        level = count(c -> c == '/', replace(root, "\\" => "/")) - count(c -> c == '/', OUTPUT_ROOT)
-        if level > 0; println("📁 $("  "^level)$(basename(root))/"); end
-        for file in files; println("   $("  "^level)  📄 $file"); end
-    end
-    @info "-------------------------"
-end
-
 function main()
     mkpath(OUTPUT_ROOT)
     try
         @info "🔌 Connecting to Chrome..."
         page = ChromeDevToolsLite.connect_browser()
-        for url in TARGET_URLS
-            @info "--- [TARGET] $url ---"
-            widgets = process_dashboard(page, url)
-            if !isempty(widgets)
-                # Julian Broadcasting .|>
-                widgets .|> save_widget
-                @info "✅ Dashboard Complete."
+        
+        # ⚡ ASYNC PIPELINE ⚡
+        # We navigate safely (Sequential), but save quickly (Parallel)
+        @sync begin
+            for url in TARGET_URLS
+                @info "--- [TARGET] $url ---"
+                widgets = process_dashboard(page, url)
+                
+                if !isempty(widgets)
+                    # Non-blocking save
+                    for w in widgets
+                        @async save_widget(w)
+                    end
+                end
             end
         end
-        print_summary()
         @info "🎉 Scrape Cycle Complete."
     catch e
         @error "Crash" exception=(e, catch_backtrace())
