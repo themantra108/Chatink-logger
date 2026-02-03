@@ -1,10 +1,10 @@
 using ChromeDevToolsLite
 using Dates
+using JSON  # <--- The Secret Weapon 🗝️
 
-# 🕒 Helper: Precise Time (IST)
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-# 🛡️ Helper: Safe Unwrap (Handles whatever wrapper Chrome throws at us)
+# 🛡️ Safe Unwrap
 function safe_unwrap(result)
     if isa(result, Dict)
         if haskey(result, "value")
@@ -21,11 +21,9 @@ function safe_unwrap(result)
     return result
 end
 
-# ⏳ Helper: Smart Waiting (The "Anti-Sleep" Hammer)
 function wait_for_selector(page, selector; timeout=60, poll_interval=1)
     start_time = time()
     while time() - start_time < timeout
-        # Simple existence check
         check_js = "document.querySelector('$selector') !== null"
         result = ChromeDevToolsLite.evaluate(page, check_js)
         val = safe_unwrap(result)
@@ -51,22 +49,101 @@ function main()
 
         @info "👀 Watching DOM for tables..."
         wait_for_selector(page, "table"; timeout=60) 
-        sleep(5) # Small buffer for hydration
+        sleep(5) 
 
-        @info "⚡ DOM Ready. Running Scraper Logic..."
+        @info "⚡ DOM Ready. Preparing Safe Payload..."
         
-        # 1️⃣ EXECUTE SCRAPER
-        # 🔧 FIX 1: We use Regex /\\n/ instead of split('\\n') to prevent SyntaxErrors.
-        # 🔧 FIX 2: We save to 'window._chartinkData' instead of returning huge strings.
-        setup_js = """
-        (() => { try { window._chartinkData = ""; const tables = document.querySelectorAll("table"); if (tables.length === 0) { window._chartinkData = "NO DATA FOUND"; return "NODATA"; } let allRows = []; tables.forEach(table => { let widgetName = "Unknown Widget"; let current = table; let depth = 0; try { while (current && depth < 6) { let sibling = current.previousElementSibling; let foundTitle = false; for (let i = 0; i < 5; i++) { if (!sibling) break; let text = sibling.innerText ? sibling.innerText.trim() : ""; if (text.length > 0 && !text.includes("Loading") && !text.includes("Error")) { widgetName = text.split(/\\n/)[0].trim(); foundTitle = true; break; } sibling = sibling.previousElementSibling; } if (foundTitle) break; current = current.parentElement; depth++; } } catch (err) {} const rows = table.querySelectorAll("tr"); const processedRows = Array.from(rows).map(row => { const cells = row.querySelectorAll("th, td"); if (cells.length === 0) return null; const isHeader = row.querySelector("th") !== null; const rowText = row.innerText || ""; if (rowText.includes("No data for table") || rowText.includes("Clause")) return null; const safeWidget = widgetName.replace(/"/g, '""'); const cellData = Array.from(cells).map(c => { let text = c.innerText ? c.innerText.trim() : ""; if (isHeader) { text = text.split(/\\n/)[0].trim(); text = text.replace(/Sort table by/gi, "").trim(); } text = text.replace(/"/g, '""'); return '"' + text + '"'; }).join(","); return '"' + safeWidget + ""," + cellData; }); allRows = allRows.concat(processedRows.filter(r => r)); }); window._chartinkData = allRows.join("\\n"); return "DONE"; } catch (e) { window._chartinkData = "JS_CRASH: " + e.toString(); return "ERROR"; } })()
+        # 1️⃣ THE JAVASCRIPT PAYLOAD
+        # We can write normal, readable JS here.
+        # JSON.json() will handle all the escaping for us!
+        raw_js_logic = """
+        (() => {
+            try {
+                window._chartinkData = "";
+                const tables = document.querySelectorAll("table");
+                if (tables.length === 0) {
+                    window._chartinkData = "NO DATA FOUND";
+                    return "NODATA";
+                }
+                
+                let allRows = [];
+
+                tables.forEach(table => {
+                    let widgetName = "Unknown Widget";
+                    
+                    // --- Sibling Hunter ---
+                    let current = table;
+                    let depth = 0;
+                    try {
+                        while (current && depth < 6) {
+                            let sibling = current.previousElementSibling;
+                            let foundTitle = false;
+                            for (let i = 0; i < 5; i++) {
+                                if (!sibling) break;
+                                let text = sibling.innerText ? sibling.innerText.trim() : "";
+                                if (text.length > 0 && !text.includes("Loading") && !text.includes("Error")) {
+                                    // Split by newline safely
+                                    widgetName = text.split('\\n')[0].trim();
+                                    foundTitle = true;
+                                    break;
+                                }
+                                sibling = sibling.previousElementSibling;
+                            }
+                            if (foundTitle) break;
+                            current = current.parentElement;
+                            depth++;
+                        }
+                    } catch (err) {}
+
+                    // --- Row Extraction ---
+                    const rows = table.querySelectorAll("tr");
+                    const processedRows = Array.from(rows).map(row => {
+                        const cells = row.querySelectorAll("th, td");
+                        if (cells.length === 0) return null;
+
+                        const isHeader = row.querySelector("th") !== null;
+                        const rowText = row.innerText || "";
+
+                        if (rowText.includes("No data for table") || rowText.includes("Clause")) return null;
+
+                        const safeWidget = widgetName.replace(/"/g, '""');
+
+                        const cellData = Array.from(cells).map(c => {
+                            let text = c.innerText ? c.innerText.trim() : "";
+                            if (isHeader) {
+                                text = text.split('\\n')[0].trim();
+                                text = text.replace(/Sort table by/gi, "").trim();
+                            }
+                            text = text.replace(/"/g, '""');
+                            return '"' + text + '"';
+                        }).join(",");
+
+                        return '"' + safeWidget + '",' + cellData;
+                    });
+
+                    allRows = allRows.concat(processedRows.filter(r => r));
+                });
+
+                window._chartinkData = allRows.join("\\n");
+                return "DONE";
+
+            } catch (e) {
+                window._chartinkData = "JS_CRASH: " + e.toString();
+                return "ERROR";
+            }
+        })()
         """
         
-        result = ChromeDevToolsLite.evaluate(page, setup_js)
+        # 🛡️ THE FIX: JSON ENCODING
+        # We turn the code into a safe JSON string (e.g., "(() => { ... })()")
+        # Then we tell Chrome to eval() that string.
+        safe_payload = JSON.json(raw_js_logic)
+        transport_js = "eval($safe_payload)"
+        
+        result = ChromeDevToolsLite.evaluate(page, transport_js)
         status = safe_unwrap(result)
         @info "🛠️ JS Setup Status: $status"
 
-        # Check for crash
         if status == "ERROR" || (isa(status, String) && startswith(status, "JS_ERROR"))
              err_res = ChromeDevToolsLite.evaluate(page, "window._chartinkData")
              err_msg = safe_unwrap(err_res)
@@ -74,19 +151,18 @@ function main()
              return
         end
 
-        # 2️⃣ CHECK DATA LENGTH
+        # 2️⃣ FETCH DATA LENGTH
         @info "📦 Checking data length..."
-        len_js = "window._chartinkData ? window._chartinkData.length : 'UNDEFINED'"
-        len_res = ChromeDevToolsLite.evaluate(page, len_js)
+        len_res = ChromeDevToolsLite.evaluate(page, "window._chartinkData.length")
         total_len = safe_unwrap(len_res)
         
         @info "📊 Raw Length: $total_len"
-
+        
         if isa(total_len, String) && total_len == "UNDEFINED"
              @warn "⚠️ Data variable is undefined."
              return
         end
-
+        
         if !isa(total_len, Int)
             try
                 total_len = parse(Int, string(total_len))
@@ -101,8 +177,7 @@ function main()
             return
         end
 
-        # 3️⃣ CHUNK FETCHING
-        # 🔧 FIX 3: Fetch in 50k chunks to avoid Protocol "Object Reference" errors
+        # 3️⃣ CHUNK FETCHING (Safe & Fast)
         full_data = ""
         chunk_size = 50000
         current_idx = 0
