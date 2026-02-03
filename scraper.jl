@@ -1,6 +1,8 @@
 using ChromeDevToolsLite
 using Dates
 using JSON
+using DataFrames
+using CSV
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
@@ -53,8 +55,7 @@ function main()
 
         @info "⚡ DOM Ready. Preparing Payload..."
         
-        # 1️⃣ THE JAVASCRIPT PAYLOAD
-        # Returns: "WidgetName","Symbol","Cmp"...
+        # 1️⃣ THE JAVASCRIPT PAYLOAD (Same as before)
         raw_js_logic = """
         (() => {
             try {
@@ -69,8 +70,6 @@ function main()
 
                 tables.forEach(table => {
                     let widgetName = "Unknown Widget";
-                    
-                    // --- Sibling Hunter ---
                     let current = table;
                     let depth = 0;
                     try {
@@ -93,7 +92,6 @@ function main()
                         }
                     } catch (err) {}
 
-                    // --- Row Extraction ---
                     const rows = table.querySelectorAll("tr");
                     const processedRows = Array.from(rows).map(row => {
                         const cells = row.querySelectorAll("th, td");
@@ -132,7 +130,6 @@ function main()
         })()
         """
         
-        # Secure Transport
         safe_payload = JSON.json(raw_js_logic)
         transport_js = "eval($safe_payload)"
         
@@ -141,13 +138,10 @@ function main()
         @info "🛠️ JS Setup Status: $status"
 
         if status == "ERROR" || (isa(status, String) && startswith(status, "JS_ERROR"))
-             err_res = ChromeDevToolsLite.evaluate(page, "window._chartinkData")
-             err_msg = safe_unwrap(err_res)
-             @warn "⚠️ JS setup crashed: $err_msg"
              return
         end
 
-        # 2️⃣ FETCH FULL DATA
+        # 2️⃣ FETCH DATA
         @info "📦 Fetching Data..."
         len_res = ChromeDevToolsLite.evaluate(page, "window._chartinkData.length")
         total_len = safe_unwrap(len_res)
@@ -174,62 +168,109 @@ function main()
             current_idx += chunk_size
         end
 
-        # 3️⃣ SPLIT & SAVE LOGIC (New!) 📂
-        @info "💾 Processing & Splitting Files..."
+        # 3️⃣ DATAFRAME PROCESSING ENGINE 🧠
+        @info "💾 DataFrames Engine: Deduplicating and Merging..."
         
-        # Ensure directory exists
         output_dir = "chartink_data"
         mkpath(output_dir)
         
         current_time = get_ist()
         lines = split(full_data, "\n")
         
-        stats = Dict{String, Int}()
+        # Buffer to hold raw text for each widget
+        # Key: WidgetName, Value: Vector of CSV Strings (Header + Data)
+        widget_buffers = Dict{String, Vector{String}}()
         
         for line in lines
             if length(line) < 5; continue; end
             
-            # Extract Widget Name (First Column)
-            # Regex looks for the first quoted string: "Widget Name"
+            # Identify Widget
             m = match(r"^\"([^\"]+)\"", line)
             if m === nothing; continue; end
-            
             widget_name = m.captures[1]
             
-            # Sanitize Filename (Mod 5_day_Check -> Mod_5_day_Check.csv)
+            # Sanitize Name
             safe_name = replace(widget_name, r"\s+" => "_")
             safe_name = replace(safe_name, r"[^a-zA-Z0-9_\-]" => "")
-            file_path = joinpath(output_dir, safe_name * ".csv")
             
-            # Check if this row is a Header (2nd col is Symbol)
-            is_header = occursin(r"^\"[^\"]+\",\"Symbol\"", line)
-            
-            # Write Logic
-            if !isfile(file_path)
-                # New File: Create it
-                open(file_path, "w") do io
-                    if is_header
-                        println(io, "\"Timestamp\"," * line)
-                    else
-                        # Orphan data row? Add header manually if needed, or just dump
-                        println(io, "\"$(current_time)\"," * line)
-                    end
-                end
-            else
-                # Existing File: Append
-                if is_header
-                    # Skip headers for existing files
-                    continue
-                end
-                open(file_path, "a") do io
-                    println(io, "\"$(current_time)\"," * line)
-                end
+            if !haskey(widget_buffers, safe_name)
+                widget_buffers[safe_name] = String[]
             end
             
-            stats[safe_name] = get(stats, safe_name, 0) + 1
+            push!(widget_buffers[safe_name], line)
         end
         
-        @info "✅ Done! Stats: $stats"
+        # Process each widget
+        for (safe_name, rows) in widget_buffers
+            file_path = joinpath(output_dir, safe_name * ".csv")
+            
+            # Separate Header and Data
+            # First row in our logic is mostly headers, but we need to be sure.
+            # We construct a pure CSV string to parse with CSV.read
+            
+            # We prepend the timestamp column to the header and data
+            # Header check:
+            header_row_idx = findfirst(x -> occursin("Symbol", x), rows)
+            if header_row_idx === nothing
+                @warn "Skipping $safe_name: No header found."
+                continue
+            end
+            
+            # Construct IO Buffer for New Data
+            # We manually reconstruct the CSV to add Timestamp
+            io_buf = IOBuffer()
+            
+            # Write Header
+            println(io_buf, "\"Timestamp\"," * rows[header_row_idx])
+            
+            # Write Data (Skip header row in loop)
+            for (i, row) in enumerate(rows)
+                if i == header_row_idx; continue; end
+                println(io_buf, "\"$(current_time)\"," * row)
+            end
+            
+            # Turn into DataFrame
+            seekstart(io_buf)
+            try
+                df_new = CSV.read(io_buf, DataFrame)
+                
+                if isempty(df_new)
+                    continue
+                end
+
+                # Merge with Old Data
+                if isfile(file_path)
+                    try
+                        df_old = CSV.read(file_path, DataFrame)
+                        
+                        # Fix column types if they mismatch (convert all to string mostly safe)
+                        # or rely on CSV.jl smart detection.
+                        # We allow missing columns to handle schema changes
+                        df_combined = vcat(df_old, df_new, cols=:union)
+                        
+                        # 🦄 DEDUPLICATION MAGIC
+                        # Unique by Timestamp + Symbol + Strategy (implicitly handled by file)
+                        unique!(df_combined, [:Timestamp, :Symbol])
+                        
+                        # Sort
+                        sort!(df_combined, :Timestamp)
+                        
+                        # Write back
+                        CSV.write(file_path, df_combined)
+                    catch e
+                        @warn "Error reading old file $file_path. Overwriting." exception=e
+                        CSV.write(file_path, df_new)
+                    end
+                else
+                    CSV.write(file_path, df_new)
+                end
+                
+                @info "✅ Processed: $safe_name ($(nrow(df_new)) new rows)"
+                
+            catch e
+                @warn "Failed to parse CSV for $safe_name" exception=e
+            end
+        end
 
     catch e
         @error "💥 Scraper Failed" exception=(e, catch_backtrace())
