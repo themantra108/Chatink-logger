@@ -9,9 +9,11 @@ function wait_for_selector(page, selector; timeout=60, poll_interval=1)
     start_time = time()
     while time() - start_time < timeout
         check_js = "document.querySelector('$selector') !== null"
-        result = ChromeDevToolsLite.evaluate(page, check_js)
         
-        # Handle various return types safely
+        # 🔧 Force returnByValue here too, just to be safe
+        result = ChromeDevToolsLite.evaluate(page, check_js; returnByValue=true)
+        
+        # Handle various return types
         val = false
         if isa(result, Dict)
             if haskey(result, "value")
@@ -44,11 +46,9 @@ function main()
         ChromeDevToolsLite.goto(page, target_url)
         @info "🧭 Navigated to dashboard."
 
-        # ⏳ Wait for table (60s timeout)
         @info "👀 Watching DOM for tables..."
         wait_for_selector(page, "table"; timeout=60) 
         
-        # Buffer for data hydration
         sleep(5) 
 
         @info "⚡ DOM Ready. Extracting..."
@@ -117,19 +117,25 @@ function main()
         })()
         """
         
-        result = ChromeDevToolsLite.evaluate(page, extract_js)
+        # 🔧 FIX: explicitly request 'returnByValue=true'
+        # This forces Chrome to serialize the object instead of sending a reference ID
+        result = ChromeDevToolsLite.evaluate(page, extract_js; returnByValue=true)
         
-        # 🛡️ SAFE UNWRAP LOGIC (The Fix)
         data_string = ""
+        
+        # 🛡️ SAFE UNWRAP (Updated)
         if isa(result, Dict)
             if haskey(result, "value")
                 data_string = result["value"]
             elseif haskey(result, "result") && isa(result["result"], Dict) && haskey(result["result"], "value")
-                # Sometimes it is nested as { "result": { "value": "..." } }
                 data_string = result["result"]["value"]
             else
-                # Fallback: Just log it and assume empty to prevent crash
-                @warn "⚠️ Unexpected JSON structure: $(keys(result))"
+                # Fallback: Check if we still got an objectId (which means it failed to serialize)
+                if haskey(result, "objectId") || (haskey(result, "result") && haskey(result["result"], "objectId"))
+                     @warn "⚠️ Received Object Reference instead of Value. Data might be too large."
+                else
+                     @warn "⚠️ Unexpected JSON structure: $(keys(result))"
+                end
                 data_string = ""
             end
         else
@@ -141,7 +147,6 @@ function main()
             return
         end
 
-        # 💾 Write to Chunk File
         temp_file = "new_chunk.csv"
         rows = split(data_string, "\n")
         current_time = get_ist()
@@ -159,31 +164,6 @@ function main()
 
     catch e
         @error "💥 Scraper Failed" exception=(e, catch_backtrace())
-        
-        # 📸 Debug Snapshot
-        if page !== nothing
-            try
-                html_res = ChromeDevToolsLite.evaluate(page, "document.documentElement.outerHTML")
-                # Safe unwrap for HTML too
-                html_content = ""
-                if isa(html_res, Dict)
-                    if haskey(html_res, "value")
-                        html_content = html_res["value"]
-                    elseif haskey(html_res, "result")
-                         html_content = get(html_res["result"], "value", "")
-                    end
-                else
-                    html_content = html_res
-                end
-                
-                open("debug_error.html", "w") do f
-                    write(f, html_content)
-                end
-                @info "✅ Debug HTML saved."
-            catch err
-                @warn "Could not save debug HTML."
-            end
-        end
         exit(1)
     end
 end
