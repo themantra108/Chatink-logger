@@ -12,22 +12,26 @@ end
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-# --- 🧠 JS Logic (The Brain) ---
+# --- 🧠 JS Logic (The Dragnet) ---
+# This JS payload hunts for tables, specific titles, and handles non-standard grids.
 const JS_PAYLOAD = """
 (() => {
     try {
-        const nodes = document.querySelectorAll("table, div.dataTables_wrapper");
-        if (nodes.length === 0) return "NODATA";
-
         let output = [];
+        
+        // 1️⃣ STANDARD TABLE SCAN
+        const nodes = document.querySelectorAll("table, div.dataTables_wrapper");
+        
         nodes.forEach((node, i) => {
-            // 1. Find Widget Name (Climb up up to 12 parents)
             let name = "Unknown Widget " + i;
             let curr = node, depth = 0;
+            
+            // Climb up 12 levels to find the Title
             while (curr && depth++ < 12) {
                 let sib = curr.previousElementSibling;
                 while (sib) {
                     let txt = sib.innerText ? sib.innerText.trim() : "";
+                    // Filter out noise like "Loading..." or buttons
                     if (txt.length > 2 && txt.length < 150 && !/Loading|Error|Run Scan/.test(txt)) {
                         name = txt.split('\\n')[0].trim();
                         break;
@@ -38,7 +42,7 @@ const JS_PAYLOAD = """
                 curr = curr.parentElement;
             }
 
-            // 2. Extract Rows
+            // Extract Rows (Handle standard tables and DataTables divs)
             let rows = (node.tagName === "TABLE") ? node.querySelectorAll("tr") : node.querySelectorAll("table tr");
             if (!rows.length) return;
 
@@ -49,23 +53,52 @@ const JS_PAYLOAD = """
                 const cells = Array.from(row.querySelectorAll("th, td"));
                 if (!cells.length) return;
 
-                const isHeader = row.querySelector("th");
+                // Escape quotes and join columns
                 let line = cells.map(c => {
                     let t = c.innerText.trim().replace(/"/g, '""');
-                    if (isHeader) t = t.split('\\n')[0].trim().replace(/Sort table by/gi, "").trim();
                     return '"' + t + '"';
                 }).join(",");
                 
+                // Prefix with Widget Name
                 output.push('"' + name.replace(/"/g, '""') + '",' + line);
             });
         });
-        window._data = output.join("\\n");
+
+        // 2️⃣ SPECIAL HUNTER: MARKET CONDITION / BREADTH
+        // Explicitly looks for headers like "Market Condition" if missed by scan
+        const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6, div.card-header");
+        headings.forEach(h => {
+            let title = h.innerText.trim();
+            if (/Market|Condition|Breadth|Ratio/i.test(title)) {
+                let container = h.nextElementSibling;
+                if (!container && h.parentElement) container = h.parentElement.nextElementSibling;
+                
+                if (container) {
+                    let table = container.querySelector("table");
+                    if (table) {
+                        let rows = table.querySelectorAll("tr");
+                        Array.from(rows).forEach(row => {
+                             let cells = row.querySelectorAll("td, th");
+                             if (cells.length > 0) {
+                                 let line = Array.from(cells).map(c => '"' + c.innerText.trim().replace(/"/g, '""') + '"').join(",");
+                                 // Add "MANUAL_CATCH" prefix to handle later
+                                 output.push('"MANUAL_CATCH_' + title.replace(/"/g, '""') + '",' + line);
+                             }
+                        });
+                    }
+                }
+            }
+        });
+
+        // Deduplicate lines
+        let uniqueOutput = [...new Set(output)];
+        window._data = uniqueOutput.join("\\n");
         return "DONE";
     } catch (e) { return "ERROR: " + e.toString(); }
 })()
 """
 
-# --- 🛠️ Pipeline Stages ---
+# --- 🛠️ Pipeline Functions ---
 
 function safe_unwrap(res)
     isa(res, Dict) ? (haskey(res,"value") ? res["value"] : (haskey(res,"result") ? safe_unwrap(res["result"]) : res)) : res
@@ -76,15 +109,15 @@ function setup_page()
     page = ChromeDevToolsLite.connect_browser()
     ChromeDevToolsLite.goto(page, TARGET_URL)
     
-    @info "👀 Waiting for Tables..."
-    # 🔴 CRITICAL FIX: Explicit Wait Loop
+    @info "👀 Waiting for Tables to Render..."
+    # Robust wait loop (Max 60s)
     for _ in 1:60
         res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0") |> safe_unwrap
         if res == true; break; end
         sleep(1)
     end
 
-    @info "📜 Scrolling to Trigger Lazy Load..."
+    @info "📜 Scrolling to Trigger Lazy Loading..."
     h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight") |> safe_unwrap
     h = isa(h, Number) ? h : 5000
     
@@ -97,7 +130,7 @@ function setup_page()
 end
 
 function extract_data(page)
-    @info "⚡ Executing Extraction JS..."
+    @info "⚡ Executing JS Payload..."
     ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
     
     len = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0") |> safe_unwrap
@@ -107,6 +140,7 @@ function extract_data(page)
     if len == 0; error("No Data Found (Page might be blank)"); end
     
     buf = IOBuffer()
+    # Chunked fetch to avoid socket limits
     for i in 0:50000:len
         chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))") |> safe_unwrap
         print(buf, chunk)
@@ -115,42 +149,60 @@ function extract_data(page)
 end
 
 function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
-    @info "🧠 Parsing Raw Data..."
+    @info "🧠 Parsing Data..."
     widgets = WidgetTable[]
     current_ts = get_ist()
     
     lines = split(raw_csv, "\n")
     groups = Dict{String, Vector{String}}()
     
+    # 1. Group raw lines by Widget Name
     for line in lines
         length(line) < 5 && continue
         m = match(r"^\"([^\"]+)\"", line)
         key = isnothing(m) ? "Unknown" : m.captures[1]
+        
+        # Merge manual catches
+        key = replace(key, "MANUAL_CATCH_" => "")
+        
         push!(get!(groups, key, String[]), line)
     end
 
+    # 2. Process each group into a DataFrame
     for (name, rows) in groups
         clean_name = replace(name, r"[^a-zA-Z0-9]" => "_")
-        # Truncate long names
         if length(clean_name) > 50; clean_name = clean_name[1:50]; end
         
-        # Header Heuristics
-        header_idx = findfirst(l -> occursin(r"\",\"(Symbol|Name|Scan Name)\"", l), rows)
-        header_idx = isnothing(header_idx) ? 1 : header_idx
+        # 🔑 CRITICAL FIX: Header Detection
+        # Looks for "Symbol", "Name", "Scan Name", OR "Date" (for Mkt Condition)
+        header_idx = findfirst(l -> occursin(r"\",\"(Symbol|Name|Scan Name|Date)\"", l), rows)
+        
+        # Fallback if no header found
+        if isnothing(header_idx); header_idx = 1; end
         
         io = IOBuffer()
-        println(io, "\"Timestamp\"," * rows[header_idx])
-        for i in (header_idx+1):length(rows)
-             # Skip repeated headers
-             if !occursin(r"\",\"(Symbol|Name|Scan Name)\"", rows[i])
-                 println(io, "\"$current_ts\"," * rows[i])
-             end
-        end
-        seekstart(io)
         
+        # Extract Clean Header (Remove the first "WidgetName" column)
+        raw_header = rows[header_idx]
+        clean_header = replace(raw_header, r"^\"[^\"]+\"," => "")
+        println(io, "\"Timestamp\"," * clean_header)
+        
+        for i in (header_idx+1):length(rows)
+            # Strip Widget Name column from data row
+            clean_row = replace(rows[i], r"^\"[^\"]+\"," => "")
+            
+            # Filter Repeats (skip lines that look like headers)
+            if !occursin(r"\"(Symbol|Name|Date)\"", clean_row)
+                 println(io, "\"$current_ts\"," * clean_row)
+            end
+        end
+        
+        seekstart(io)
         try
             df = CSV.read(io, DataFrame)
-            push!(widgets, WidgetTable(name, clean_name, df))
+            if nrow(df) > 0
+                push!(widgets, WidgetTable(name, clean_name, df))
+            end
         catch e
             @warn "Parse Fail: $name"
         end
@@ -162,12 +214,19 @@ function save_widget(w::WidgetTable)
     path = joinpath(OUTPUT_DIR, w.clean_name * ".csv")
     
     if isfile(path)
-        old_df = CSV.read(path, DataFrame)
-        # 🦄 DataFrames Power: Union Merge + Unique + Sort
-        final_df = vcat(old_df, w.data, cols=:union)
-        unique!(final_df, [:Timestamp, :Symbol]) # Dedupe
-        sort!(final_df, :Timestamp)
-        CSV.write(path, final_df)
+        try
+            old_df = CSV.read(path, DataFrame)
+            # Merge Old + New
+            final_df = vcat(old_df, w.data, cols=:union)
+            # Deduplicate (Timestamp + Symbol/Date)
+            unique!(final_df) 
+            # Sort by Time
+            sort!(final_df, :Timestamp)
+            CSV.write(path, final_df)
+        catch
+            # If old file is corrupt, overwrite
+            CSV.write(path, w.data)
+        end
     else
         CSV.write(path, w.data)
     end
@@ -179,7 +238,7 @@ function main()
     mkpath(OUTPUT_DIR)
     
     try
-        # The "Enthusiast Pipeline" 🟣
+        # The Enthusiast Pipeline 🟣
         page = setup_page()
         data = extract_data(page)
         widgets = parse_widgets(data)
@@ -189,7 +248,7 @@ function main()
             exit(0)
         end
 
-        # Broadcasting save over the vector
+        # Broadcast save across all widgets
         widgets .|> save_widget
         
         @info "✅ Pipeline Success. ($(length(widgets)) widgets processed)"
