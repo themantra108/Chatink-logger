@@ -37,6 +37,30 @@ function wait_for_selector(page, selector; timeout=60, poll_interval=1)
     throw(ErrorException("Timeout waiting for selector: $selector"))
 end
 
+# 📜 NEW: Smart Scroll Function
+function smart_scroll(page)
+    @info "📜 Scrolling to trigger lazy-loading widgets..."
+    
+    # Get page height
+    h_res = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight")
+    height = safe_unwrap(h_res)
+    if !isa(height, Number); height = 5000; end
+    
+    # Scroll in steps
+    current_scroll = 0
+    step = 800
+    while current_scroll < height
+        current_scroll += step
+        ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $current_scroll)")
+        sleep(0.5) # Wait for trigger
+    end
+    
+    # Scroll back to top just in case
+    ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, 0)")
+    sleep(2) # Final stabilization wait
+    @info "✅ Scroll complete."
+end
+
 function main()
     @info "🚀 Julia Scraper: Initializing..."
     page = nothing
@@ -51,16 +75,23 @@ function main()
 
         @info "👀 Watching DOM for tables..."
         wait_for_selector(page, "table"; timeout=60) 
-        sleep(5) 
+        
+        # 🟢 UPGRADE: Run Smart Scroll
+        smart_scroll(page)
 
         @info "⚡ DOM Ready. Preparing Payload..."
         
-        # 1️⃣ THE JAVASCRIPT PAYLOAD (Same as before)
+        # 1️⃣ THE JAVASCRIPT PAYLOAD
         raw_js_logic = """
         (() => {
             try {
                 window._chartinkData = "";
+                // Select ALL tables (now that we scrolled)
                 const tables = document.querySelectorAll("table");
+                
+                // Debug Info
+                console.log("Found tables: " + tables.length);
+                
                 if (tables.length === 0) {
                     window._chartinkData = "NO DATA FOUND";
                     return "NODATA";
@@ -68,18 +99,20 @@ function main()
                 
                 let allRows = [];
 
-                tables.forEach(table => {
-                    let widgetName = "Unknown Widget";
+                tables.forEach((table, index) => {
+                    let widgetName = "Unknown Widget " + index;
                     let current = table;
                     let depth = 0;
                     try {
+                        // Sibling Hunter Logic
                         while (current && depth < 6) {
                             let sibling = current.previousElementSibling;
                             let foundTitle = false;
                             for (let i = 0; i < 5; i++) {
                                 if (!sibling) break;
                                 let text = sibling.innerText ? sibling.innerText.trim() : "";
-                                if (text.length > 0 && !text.includes("Loading") && !text.includes("Error")) {
+                                // Heuristic: Widget titles are short and don't contain "Loading"
+                                if (text.length > 0 && text.length < 100 && !text.includes("Loading") && !text.includes("Error")) {
                                     widgetName = text.split('\\n')[0].trim();
                                     foundTitle = true;
                                     break;
@@ -121,7 +154,7 @@ function main()
                 });
 
                 window._chartinkData = allRows.join("\\n");
-                return "DONE";
+                return "DONE (Found " + tables.length + " tables)";
 
             } catch (e) {
                 window._chartinkData = "JS_CRASH: " + e.toString();
@@ -168,7 +201,7 @@ function main()
             current_idx += chunk_size
         end
 
-        # 3️⃣ DATAFRAME PROCESSING ENGINE 🧠
+        # 3️⃣ DATAFRAME PROCESSING ENGINE
         @info "💾 DataFrames Engine: Deduplicating and Merging..."
         
         output_dir = "chartink_data"
@@ -177,100 +210,72 @@ function main()
         current_time = get_ist()
         lines = split(full_data, "\n")
         
-        # Buffer to hold raw text for each widget
-        # Key: WidgetName, Value: Vector of CSV Strings (Header + Data)
         widget_buffers = Dict{String, Vector{String}}()
         
         for line in lines
             if length(line) < 5; continue; end
             
-            # Identify Widget
             m = match(r"^\"([^\"]+)\"", line)
             if m === nothing; continue; end
             widget_name = m.captures[1]
             
-            # Sanitize Name
             safe_name = replace(widget_name, r"\s+" => "_")
             safe_name = replace(safe_name, r"[^a-zA-Z0-9_\-]" => "")
             
             if !haskey(widget_buffers, safe_name)
                 widget_buffers[safe_name] = String[]
             end
-            
             push!(widget_buffers[safe_name], line)
         end
         
-        # Process each widget
+        @info "📊 Found $(length(widget_buffers)) unique widgets."
+
         for (safe_name, rows) in widget_buffers
             file_path = joinpath(output_dir, safe_name * ".csv")
             
-            # Separate Header and Data
-            # First row in our logic is mostly headers, but we need to be sure.
-            # We construct a pure CSV string to parse with CSV.read
-            
-            # We prepend the timestamp column to the header and data
-            # Header check:
             header_row_idx = findfirst(x -> occursin("Symbol", x), rows)
             if header_row_idx === nothing
-                @warn "Skipping $safe_name: No header found."
-                continue
+                # fallback: take first row if no "Symbol" found, or skip?
+                # Let's assume row 1 is header if explicit match fails, but safe check is better
+                if length(rows) > 0
+                     header_row_idx = 1
+                else
+                     continue
+                end
             end
             
-            # Construct IO Buffer for New Data
-            # We manually reconstruct the CSV to add Timestamp
             io_buf = IOBuffer()
-            
-            # Write Header
             println(io_buf, "\"Timestamp\"," * rows[header_row_idx])
-            
-            # Write Data (Skip header row in loop)
             for (i, row) in enumerate(rows)
                 if i == header_row_idx; continue; end
                 println(io_buf, "\"$(current_time)\"," * row)
             end
             
-            # Turn into DataFrame
             seekstart(io_buf)
             try
                 df_new = CSV.read(io_buf, DataFrame)
-                
-                if isempty(df_new)
-                    continue
-                end
+                if isempty(df_new); continue; end
 
-                # Merge with Old Data
                 if isfile(file_path)
                     try
                         df_old = CSV.read(file_path, DataFrame)
-                        
-                        # Fix column types if they mismatch (convert all to string mostly safe)
-                        # or rely on CSV.jl smart detection.
-                        # We allow missing columns to handle schema changes
                         df_combined = vcat(df_old, df_new, cols=:union)
-                        
-                        # 🦄 DEDUPLICATION MAGIC
-                        # Unique by Timestamp + Symbol + Strategy (implicitly handled by file)
                         unique!(df_combined, [:Timestamp, :Symbol])
-                        
-                        # Sort
                         sort!(df_combined, :Timestamp)
-                        
-                        # Write back
                         CSV.write(file_path, df_combined)
                     catch e
-                        @warn "Error reading old file $file_path. Overwriting." exception=e
+                        @warn "Overwrite: Old file $file_path corrupted."
                         CSV.write(file_path, df_new)
                     end
                 else
                     CSV.write(file_path, df_new)
                 end
-                
-                @info "✅ Processed: $safe_name ($(nrow(df_new)) new rows)"
-                
             catch e
-                @warn "Failed to parse CSV for $safe_name" exception=e
+                @warn "CSV Parse Error: $safe_name"
             end
         end
+        
+        @info "✅ Scrape Cycle Complete."
 
     catch e
         @error "💥 Scraper Failed" exception=(e, catch_backtrace())
