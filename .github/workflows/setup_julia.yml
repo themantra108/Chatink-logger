@@ -27,7 +27,7 @@ jobs:
             Pkg.activate(".")
             
             # Add your packages here
-            Pkg.add("ChromeDevToolsLite.jl")
+            Pkg.add("ChromeDevToolsLite")
             Pkg.add("Dates")
             
             # Lock the versions
