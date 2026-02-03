@@ -1,10 +1,45 @@
 using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 
 # ==============================================================================
-# 🧠 TYPE SYSTEM
+# 1. 🧱 CONFIGURATION & CONSTANTS
+# ==============================================================================
+const TARGET_URLS = [
+    "https://chartink.com/dashboard/208896",  # Stocks/Sectors
+    "https://chartink.com/dashboard/419640"   # Market Condition
+]
+const OUTPUT_ROOT = "chartink_data"
+
+# Navigation Safety Settings
+const NAV_TIMEOUT_RETRIES = 3
+const NAV_SLEEP_SEC = 5
+const MAX_WAIT_CYCLES = 60
+const SCROLL_STEP = 2500 # Pixels
+const SCROLL_SLEEP = 0.1
+
+# Regex & Map (Pre-compiled for speed)
+const DATE_REGEX = r"(\d+)(?:st|nd|rd|th)?\s+([a-zA-Z]+)"
+const MONTH_MAP = Dict{SubString{String}, Int}(
+    "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4, "May" => 5, "Jun" => 6,
+    "Jul" => 7, "Aug" => 8, "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12
+)
+
+get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
+
+# ==============================================================================
+# 2. 🧠 TYPE SYSTEM & STRATEGIES
 # ==============================================================================
 abstract type UpdateStrategy end
+
+"""
+SnapshotStrategy: For lists that change completely (e.g., "Top Gainers").
+Logic: Replaces all rows for the current scan date.
+"""
 struct SnapshotStrategy <: UpdateStrategy end
+
+"""
+TimeSeriesStrategy: For history tracking (e.g., "Market Breadth").
+Logic: Smart Upsert. Only adds a new row if the data values have changed.
+"""
 struct TimeSeriesStrategy <: UpdateStrategy end
 
 struct WidgetTable{T <: UpdateStrategy}
@@ -16,43 +51,30 @@ struct WidgetTable{T <: UpdateStrategy}
 end
 
 # ==============================================================================
-# 🧱 CONFIGURATION
-# ==============================================================================
-const TARGET_URLS = [
-    "https://chartink.com/dashboard/208896",
-    "https://chartink.com/dashboard/419640"
-]
-const OUTPUT_ROOT = "chartink_data"
-
-const DATE_REGEX = r"(\d+)(?:st|nd|rd|th)?\s+([a-zA-Z]+)"
-const MONTH_MAP = Dict{SubString{String}, Int}(
-    "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4, "May" => 5, "Jun" => 6,
-    "Jul" => 7, "Aug" => 8, "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12
-)
-
-get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
-
-# ==============================================================================
-# 📅 PARSING & ENRICHMENT
+# 3. 📅 PARSING & LOGIC
 # ==============================================================================
 
+"""
+    parse_chartink_date(str) -> (day, month)
+Parses "2nd Feb" into (2, 2). Returns (0,0) on failure.
+"""
 function parse_chartink_date(date_str::AbstractString)
     m = match(DATE_REGEX, date_str)
     if isnothing(m); return (0, 0); end
     day = parse(Int, m.captures[1])
-    mon_str = titlecase(m.captures[2])[1:3]
-    mon = get(MONTH_MAP, mon_str, 0)
+    mon = get(MONTH_MAP, titlecase(m.captures[2])[1:3], 0)
     return (day, mon)
 end
 
+"""
+    determine_strategy(df)
+Dispatches the correct saving strategy based on column presence.
+"""
 function determine_strategy(df::DataFrame)
-    if "Date" in names(df)
-        return TimeSeriesStrategy()
-    else
-        return SnapshotStrategy()
-    end
+    return "Date" in names(df) ? TimeSeriesStrategy() : SnapshotStrategy()
 end
 
+# Enrichment: Time Series (Smart Year Inference)
 function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
     nrows = nrow(df)
     full_dates = Vector{Union{Date, Missing}}(missing, nrows)
@@ -61,17 +83,21 @@ function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
     last_month = 0
     date_col = df.Date
     
-    for i in 1:nrows
+    @inbounds for i in 1:nrows
         raw_val = string(date_col[i])
         (day, mon) = parse_chartink_date(raw_val)
         if day == 0 || mon == 0; continue; end
         
+        # Initialize anchor
         if last_month == 0; last_month = mon; end
+        
+        # Year Rollback Logic (Jan -> Dec)
         if mon > (last_month + 6); current_year -= 1;
         elseif mon < (last_month - 6); current_year += 1; end
         
         try
             cand = Date(current_year, mon, day)
+            # Future Guard: If inferred date is in future, rollback year
             if cand > (scrape_date + Day(2))
                  cand = Date(current_year - 1, mon, day)
                  current_year -= 1
@@ -83,6 +109,7 @@ function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
     df[!, :Full_Date] = full_dates
 end
 
+# Enrichment: Snapshot (Scan_Date creation)
 function enrich_dataframe!(df::DataFrame, ::SnapshotStrategy)
     if "Timestamp" in names(df)
         df[!, :Scan_Date] = Date.(df[!, :Timestamp])
@@ -90,33 +117,48 @@ function enrich_dataframe!(df::DataFrame, ::SnapshotStrategy)
 end
 
 # ==============================================================================
-# 💾 SAVING LOGIC
+# 4. 💾 SAVING LOGIC
 # ==============================================================================
 
 function save_to_disk(w::WidgetTable, final_df::DataFrame)
     folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
     mkpath(folder_path)
     path = joinpath(folder_path, w.clean_name * ".csv")
+    
+    # LIFO Sort: Newest data always on top
     sort!(final_df, :Timestamp, rev=true)
     CSV.write(path, final_df)
     @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name)"
 end
 
-# STRATEGY 1: Snapshot (Symbol List)
+# --- Snapshot Logic ---
 function save_widget(w::WidgetTable{SnapshotStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
     if !isfile(path); save_to_disk(w, w.data); return; end
 
     old_df = CSV.read(path, DataFrame)
+    
+    # Delete old rows that belong to the same scan date (Block Replace)
     if "Scan_Date" in names(w.data)
         active_dates = unique(dropmissing(w.data, :Scan_Date).Scan_Date)
         filter!(row -> ismissing(row.Scan_Date) || !(row.Scan_Date in active_dates), old_df)
     end
-    final_df = vcat(w.data, old_df, cols=:union)
-    save_to_disk(w, final_df)
+    
+    save_to_disk(w, vcat(w.data, old_df, cols=:union))
 end
 
-# STRATEGY 2: Time Series (Smart Update)
+# --- Time Series Logic ---
+function has_row_changed(new_row, old_row, check_cols)
+    for col in check_cols
+        val_new = hasproperty(new_row, col) ? new_row[col] : missing
+        val_old = hasproperty(old_row, col) ? old_row[col] : missing
+        if !isequal(val_new, val_old)
+            return true
+        end
+    end
+    return false
+end
+
 function save_widget(w::WidgetTable{TimeSeriesStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
     if !isfile(path); save_to_disk(w, w.data); return; end
@@ -124,13 +166,15 @@ function save_widget(w::WidgetTable{TimeSeriesStrategy})
     old_df = CSV.read(path, DataFrame)
     new_df = w.data
     
-    metadata_cols = ["Timestamp", "Full_Date", "Scan_Date"]
-    content_cols = filter(n -> !(n in metadata_cols), names(new_df))
+    # Identify content columns for diffing
+    meta_cols = ["Timestamp", "Full_Date", "Scan_Date"]
+    content_cols = filter(n -> !(n in meta_cols), names(new_df))
     
+    # Build Lookup Map (Date -> Row)
     old_map = Dict{String, DataFrameRow}()
     for row in eachrow(old_df)
-        d_str = string(row.Date)
-        if !haskey(old_map, d_str); old_map[d_str] = row; end
+        d = string(row.Date)
+        if !haskey(old_map, d); old_map[d] = row; end
     end
     
     rows_to_keep = Int[]
@@ -138,35 +182,49 @@ function save_widget(w::WidgetTable{TimeSeriesStrategy})
         new_row = new_df[i, :]
         d_key = string(new_row.Date)
         
-        if haskey(old_map, d_key)
-            old_row = old_map[d_key]
-            is_changed = false
-            for col in content_cols
-                val_new = hasproperty(new_row, col) ? new_row[col] : missing
-                val_old = hasproperty(old_row, col) ? old_row[col] : missing
-                if !isequal(val_new, val_old)
-                    is_changed = true; break;
-                end
-            end
-            if is_changed; push!(rows_to_keep, i); end
-        else
+        # Logic: If Date exists and Data Unchanged -> Skip (Keep Old). 
+        #        If Date exists and Data Changed -> Keep New.
+        #        If Date New -> Keep New.
+        if !haskey(old_map, d_key) || has_row_changed(new_row, old_map[d_key], content_cols)
             push!(rows_to_keep, i)
         end
     end
     
-    actual_updates = new_df[rows_to_keep, :]
-    if isempty(actual_updates); return; end # Skip if no changes
+    if isempty(rows_to_keep); return; end # Optimization: Exit early if no changes
 
-    combined_df = vcat(actual_updates, old_df, cols=:union)
-    sort!(combined_df, :Timestamp, rev=true)
-    unique!(combined_df, :Date)
+    combined = vcat(new_df[rows_to_keep, :], old_df, cols=:union)
+    sort!(combined, :Timestamp, rev=true)
+    unique!(combined, :Date) # Hard dedupe ensures only 1 row per date text
     
-    save_to_disk(w, combined_df)
+    save_to_disk(w, combined)
 end
 
 # ==============================================================================
-# 🧠 JS & PIPELINE
+# 5. 🌐 BROWSER INTERACTION (Helper Functions)
 # ==============================================================================
+
+function wait_for_tables(page)
+    for _ in 1:MAX_WAIT_CYCLES
+        res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0")
+        val = isa(res, Dict) ? res["value"] : res
+        if val == true; return true; end
+        sleep(1)
+    end
+    return false
+end
+
+function scroll_page(page)
+    h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight")
+    h_val = isa(h, Dict) ? h["value"] : h
+    h_int = isa(h_val, Number) ? h_val : 5000
+    
+    for s in 0:SCROLL_STEP:h_int
+        ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)")
+        sleep(SCROLL_SLEEP)
+    end
+    sleep(3) # Settle time
+end
+
 const JS_PAYLOAD = """
 (() => {
     try {
@@ -174,6 +232,7 @@ const JS_PAYLOAD = """
         const cleanBody = (txt) => txt ? txt.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         const cleanHeader = (txt) => txt ? txt.replace(/Sort table by.*/gi, "").trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         
+        // 1. Standard Tables
         const nodes = document.querySelectorAll("table, div.dataTables_wrapper");
         nodes.forEach((node, i) => {
             let name = "Unknown Widget " + i;
@@ -202,6 +261,7 @@ const JS_PAYLOAD = """
             });
         });
 
+        // 2. Special Headers (Market Condition)
         const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6, div.card-header");
         headings.forEach(h => {
             let title = h.innerText.trim();
@@ -228,10 +288,26 @@ const JS_PAYLOAD = """
 })()
 """
 
-function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTable}
-    @info "🧠 Parsing widgets..."
+function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
+    @info "⚡ Extracting..."
+    ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
+    
+    len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0")
+    len_val = isa(len_res, Dict) ? len_res["value"] : len_res
+    len = try parse(Int, string(len_val)) catch; 0 end
+    
+    if len == 0; return WidgetTable[]; end
+    
+    buf = IOBuffer()
+    for i in 0:50000:len
+        chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))")
+        val = isa(chunk, Dict) ? chunk["value"] : chunk
+        print(buf, val)
+    end
+    
+    # Inner Parse Logic
+    raw_csv = String(take!(buf))
     widgets = WidgetTable[]
-    current_ts = get_ist()
     groups = Dict{String, Vector{String}}()
     
     for line in eachline(IOBuffer(raw_csv))
@@ -246,6 +322,7 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
         header_idx = findfirst(l -> occursin(r"\",\"(Symbol|Name|Scan Name|Date)\"", l), rows)
         io = IOBuffer()
         start_row, expected_cols = 1, 0
+        
         if !isnothing(header_idx)
             raw_header = replace(rows[header_idx], r"^\"[^\"]+\"," => "")
             println(io, "\"Timestamp\"," * raw_header)
@@ -256,6 +333,8 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
             println(io, "\"Timestamp\"," * join(["\"Col_$i\"" for i in 1:cols_count], ","))
             expected_cols = cols_count + 1
         end
+        
+        current_ts = get_ist()
         valid_count = 0
         for i in start_row:length(rows)
             if abs(length(split(rows[i], "\",\"")) - expected_cols) > 2; continue; end
@@ -265,6 +344,7 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
                  valid_count += 1
             end
         end
+        
         if valid_count > 0
             seekstart(io)
             try
@@ -290,51 +370,26 @@ function get_dashboard_name(page)
     return isempty(clean_title) ? "Dashboard_Unknown" : clean_title
 end
 
-function process_dashboard(page, url)
+# ==============================================================================
+# 6. 🚀 MAIN PIPELINE
+# ==============================================================================
+
+function process_url(page, url)
     @info "🧭 Navigating to: $url"
     ChromeDevToolsLite.evaluate(page, "window._data = null;")
     
-    # 1. Reliable Navigation
     retry_nav = retry(() -> ChromeDevToolsLite.goto(page, url), delays=[2.0, 5.0, 10.0])
     try; retry_nav(); catch; @error "Failed to load $url"; return WidgetTable[]; end
     
-    # 2. Safety Sleep (5 seconds for full load)
-    sleep(5) 
+    sleep(NAV_SLEEP_SEC) # Safe Sleep
     
     folder_name = get_dashboard_name(page)
     @info "🏷️ Dashboard: $folder_name"
     
-    # 3. Tables Check
-    for i in 1:60
-        res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0")
-        val = isa(res, Dict) ? res["value"] : res
-        if val == true; break; end
-        sleep(1)
-    end
+    wait_for_tables(page)
+    scroll_page(page)
     
-    # 4. Reliable Scrolling
-    h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight")
-    h_val = isa(h, Dict) ? h["value"] : h
-    h_int = isa(h_val, Number) ? h_val : 5000
-    for s in 0:1000:h_int; ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)"); sleep(0.3); end
-    sleep(3) # Post-scroll wait
-    
-    @info "⚡ Extracting..."
-    ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
-    
-    len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0")
-    len_val = isa(len_res, Dict) ? len_res["value"] : len_res
-    len = try parse(Int, string(len_val)) catch; 0 end
-    
-    if len == 0; @warn "⚠️ No data found on $url."; return WidgetTable[]; end
-    
-    buf = IOBuffer()
-    for i in 0:50000:len
-        chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))")
-        val = isa(chunk, Dict) ? chunk["value"] : chunk
-        print(buf, val)
-    end
-    return parse_widgets(String(take!(buf)), folder_name)
+    return extract_and_parse(page, folder_name)
 end
 
 function main()
@@ -343,18 +398,18 @@ function main()
         @info "🔌 Connecting to Chrome..."
         page = ChromeDevToolsLite.connect_browser()
         
-        # ⚡ ASYNC PIPELINE ⚡
-        # We navigate safely (Sequential), but save quickly (Parallel)
         @sync begin
             for url in TARGET_URLS
                 @info "--- [TARGET] $url ---"
-                widgets = process_dashboard(page, url)
+                widgets = process_url(page, url)
                 
                 if !isempty(widgets)
-                    # Non-blocking save
                     for w in widgets
+                        # Async Save: Don't block browser navigation
                         @async save_widget(w)
                     end
+                else
+                    @warn "⚠️ No widgets found for $url"
                 end
             end
         end
