@@ -1,8 +1,0 @@
-playwright
-pandas
-gspread
-oauth2client
-google-auth
-gspread-dataframe
-lxml
-numpy
