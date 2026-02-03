@@ -65,17 +65,17 @@ try
     result = ChromeDevToolsLite.evaluate(page, extract_js)
     data_string = isa(result, Dict) && haskey(result, "value") ? result["value"] : result
 
-    # 🚨 CHANGE: Write to a TEMP file ("w" mode), not the history file
+    # 🚨 Writes to TEMP file to avoid Git conflicts
     temp_file = "new_chunk.csv"
     
     if data_string == "NO DATA FOUND" || isempty(data_string)
         println("⚠️ 0 ROWS FOUND.")
+        # Only dump debug html if it truly failed (optional)
         exit(1)
     else
         rows = split(data_string, "\n")
         current_time = get_ist()
         
-        # Write clean data to the temp file
         open(temp_file, "w") do io
             count = 0
             for row in rows
