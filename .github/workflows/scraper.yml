@@ -1,7 +1,10 @@
 name: Chartink Scraper (24/7) 📈
 
 on:
+  # 👇 MANUAL TRIGGER: This enables the "Run workflow" button
   workflow_dispatch:
+  
+  # ⏰ AUTOMATIC TRIGGER: Runs every 5 minutes
   schedule:
     - cron: '*/5 * * * *'
 
@@ -46,7 +49,8 @@ jobs:
       - name: Run Scraper 🕸️
         run: julia --project=. scraper.jl
 
-       - name: Commit and Push Data 💾
+      # 💾 DATA COMMIT STEP (Indentation Fixed)
+      - name: Commit and Push Data 💾
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
