@@ -1,6 +1,6 @@
 using ChromeDevToolsLite
 using Dates
-using JSON  # <--- The Secret Weapon 🗝️
+using JSON
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
@@ -51,11 +51,10 @@ function main()
         wait_for_selector(page, "table"; timeout=60) 
         sleep(5) 
 
-        @info "⚡ DOM Ready. Preparing Safe Payload..."
+        @info "⚡ DOM Ready. Preparing Payload..."
         
         # 1️⃣ THE JAVASCRIPT PAYLOAD
-        # We can write normal, readable JS here.
-        # JSON.json() will handle all the escaping for us!
+        # Returns: "WidgetName","Symbol","Cmp"...
         raw_js_logic = """
         (() => {
             try {
@@ -82,7 +81,6 @@ function main()
                                 if (!sibling) break;
                                 let text = sibling.innerText ? sibling.innerText.trim() : "";
                                 if (text.length > 0 && !text.includes("Loading") && !text.includes("Error")) {
-                                    // Split by newline safely
                                     widgetName = text.split('\\n')[0].trim();
                                     foundTitle = true;
                                     break;
@@ -134,9 +132,7 @@ function main()
         })()
         """
         
-        # 🛡️ THE FIX: JSON ENCODING
-        # We turn the code into a safe JSON string (e.g., "(() => { ... })()")
-        # Then we tell Chrome to eval() that string.
+        # Secure Transport
         safe_payload = JSON.json(raw_js_logic)
         transport_js = "eval($safe_payload)"
         
@@ -151,33 +147,20 @@ function main()
              return
         end
 
-        # 2️⃣ FETCH DATA LENGTH
-        @info "📦 Checking data length..."
+        # 2️⃣ FETCH FULL DATA
+        @info "📦 Fetching Data..."
         len_res = ChromeDevToolsLite.evaluate(page, "window._chartinkData.length")
         total_len = safe_unwrap(len_res)
         
-        @info "📊 Raw Length: $total_len"
-        
-        if isa(total_len, String) && total_len == "UNDEFINED"
-             @warn "⚠️ Data variable is undefined."
-             return
-        end
-        
         if !isa(total_len, Int)
-            try
-                total_len = parse(Int, string(total_len))
-            catch
-                @warn "⚠️ Invalid length format."
-                return
-            end
+             total_len = try parse(Int, string(total_len)) catch; 0 end
         end
 
         if total_len == 0
-            @warn "⚠️ Data length is 0."
+            @warn "⚠️ No data found."
             return
         end
 
-        # 3️⃣ CHUNK FETCHING (Safe & Fast)
         full_data = ""
         chunk_size = 50000
         current_idx = 0
@@ -187,26 +170,66 @@ function main()
             chunk_js = "window._chartinkData.substring($current_idx, $end_idx)"
             chunk_res = ChromeDevToolsLite.evaluate(page, chunk_js)
             chunk_val = safe_unwrap(chunk_res)
-            
             full_data = full_data * string(chunk_val)
             current_idx += chunk_size
         end
 
-        # 💾 Write to File
-        temp_file = "new_chunk.csv"
-        rows = split(full_data, "\n")
-        current_time = get_ist()
+        # 3️⃣ SPLIT & SAVE LOGIC (New!) 📂
+        @info "💾 Processing & Splitting Files..."
         
-        open(temp_file, "w") do io
-            count = 0
-            for row in rows
-                if length(row) > 10 
-                    println(io, "\"$(current_time)\",$row")
-                    count += 1
+        # Ensure directory exists
+        output_dir = "chartink_data"
+        mkpath(output_dir)
+        
+        current_time = get_ist()
+        lines = split(full_data, "\n")
+        
+        stats = Dict{String, Int}()
+        
+        for line in lines
+            if length(line) < 5; continue; end
+            
+            # Extract Widget Name (First Column)
+            # Regex looks for the first quoted string: "Widget Name"
+            m = match(r"^\"([^\"]+)\"", line)
+            if m === nothing; continue; end
+            
+            widget_name = m.captures[1]
+            
+            # Sanitize Filename (Mod 5_day_Check -> Mod_5_day_Check.csv)
+            safe_name = replace(widget_name, r"\s+" => "_")
+            safe_name = replace(safe_name, r"[^a-zA-Z0-9_\-]" => "")
+            file_path = joinpath(output_dir, safe_name * ".csv")
+            
+            # Check if this row is a Header (2nd col is Symbol)
+            is_header = occursin(r"^\"[^\"]+\",\"Symbol\"", line)
+            
+            # Write Logic
+            if !isfile(file_path)
+                # New File: Create it
+                open(file_path, "w") do io
+                    if is_header
+                        println(io, "\"Timestamp\"," * line)
+                    else
+                        # Orphan data row? Add header manually if needed, or just dump
+                        println(io, "\"$(current_time)\"," * line)
+                    end
+                end
+            else
+                # Existing File: Append
+                if is_header
+                    # Skip headers for existing files
+                    continue
+                end
+                open(file_path, "a") do io
+                    println(io, "\"$(current_time)\"," * line)
                 end
             end
-            @info "✅ Success! Captured $count rows."
+            
+            stats[safe_name] = get(stats, safe_name, 0) + 1
         end
+        
+        @info "✅ Done! Stats: $stats"
 
     catch e
         @error "💥 Scraper Failed" exception=(e, catch_backtrace())
