@@ -1,10 +1,9 @@
 using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 
-# --- 🧱 Types & Consts ---
+# --- 🧱 Configuration & Types ---
 const TARGET_URL = "https://chartink.com/dashboard/208896"
 const OUTPUT_DIR = "chartink_data"
 
-# A specific type to hold our scraped data before saving
 struct WidgetTable
     name::String
     clean_name::String
@@ -13,39 +12,100 @@ end
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-# --- 🛠️ Core Logic ---
+# --- 🧠 JS Logic (The Brain) ---
+const JS_PAYLOAD = """
+(() => {
+    try {
+        const nodes = document.querySelectorAll("table, div.dataTables_wrapper");
+        if (nodes.length === 0) return "NODATA";
 
-function connect_and_scroll()
+        let output = [];
+        nodes.forEach((node, i) => {
+            // 1. Find Widget Name (Climb up up to 12 parents)
+            let name = "Unknown Widget " + i;
+            let curr = node, depth = 0;
+            while (curr && depth++ < 12) {
+                let sib = curr.previousElementSibling;
+                while (sib) {
+                    let txt = sib.innerText ? sib.innerText.trim() : "";
+                    if (txt.length > 2 && txt.length < 150 && !/Loading|Error|Run Scan/.test(txt)) {
+                        name = txt.split('\\n')[0].trim();
+                        break;
+                    }
+                    sib = sib.previousElementSibling;
+                }
+                if (!name.includes("Unknown")) break;
+                curr = curr.parentElement;
+            }
+
+            // 2. Extract Rows
+            let rows = (node.tagName === "TABLE") ? node.querySelectorAll("tr") : node.querySelectorAll("table tr");
+            if (!rows.length) return;
+
+            Array.from(rows).forEach(row => {
+                let txt = row.innerText;
+                if (txt.includes("No data") || txt.includes("Clause")) return;
+                
+                const cells = Array.from(row.querySelectorAll("th, td"));
+                if (!cells.length) return;
+
+                const isHeader = row.querySelector("th");
+                let line = cells.map(c => {
+                    let t = c.innerText.trim().replace(/"/g, '""');
+                    if (isHeader) t = t.split('\\n')[0].trim().replace(/Sort table by/gi, "").trim();
+                    return '"' + t + '"';
+                }).join(",");
+                
+                output.push('"' + name.replace(/"/g, '""') + '",' + line);
+            });
+        });
+        window._data = output.join("\\n");
+        return "DONE";
+    } catch (e) { return "ERROR: " + e.toString(); }
+})()
+"""
+
+# --- 🛠️ Pipeline Stages ---
+
+function safe_unwrap(res)
+    isa(res, Dict) ? (haskey(res,"value") ? res["value"] : (haskey(res,"result") ? safe_unwrap(res["result"]) : res)) : res
+end
+
+function setup_page()
     @info "🔌 Connecting..."
     page = ChromeDevToolsLite.connect_browser()
     ChromeDevToolsLite.goto(page, TARGET_URL)
     
-    @info "📜 Scrolling..."
-    # Julian way to handle nullable types: strictly check or default
+    @info "👀 Waiting for Tables..."
+    # 🔴 CRITICAL FIX: Explicit Wait Loop
+    for _ in 1:60
+        res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0") |> safe_unwrap
+        if res == true; break; end
+        sleep(1)
+    end
+
+    @info "📜 Scrolling to Trigger Lazy Load..."
     h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight") |> safe_unwrap
     h = isa(h, Number) ? h : 5000
     
-    # Range loop is very Julian
     for s in 0:800:h
         ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)")
-        sleep(0.2)
+        sleep(0.3)
     end
-    sleep(2)
+    sleep(3) # Final settling time
     return page
 end
 
-function extract_raw_csv(page)
-    @info "⚡ Executing JS..."
-    # We keep the JS payload in a separate variable for cleanliness (omitted here for brevity, assumes JS_PAYLOAD exists)
+function extract_data(page)
+    @info "⚡ Executing Extraction JS..."
     ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
     
-    # Fetch length
-    len = ChromeDevToolsLite.evaluate(page, "window._data.length") |> safe_unwrap
+    len = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0") |> safe_unwrap
     len = try parse(Int, string(len)) catch; 0 end
     
-    if len == 0; error("No Data Found"); end
+    @info "📦 Payload Size: $len chars"
+    if len == 0; error("No Data Found (Page might be blank)"); end
     
-    # IOBuffer is faster than string concatenation for massive data
     buf = IOBuffer()
     for i in 0:50000:len
         chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))") |> safe_unwrap
@@ -55,11 +115,10 @@ function extract_raw_csv(page)
 end
 
 function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
+    @info "🧠 Parsing Raw Data..."
     widgets = WidgetTable[]
     current_ts = get_ist()
     
-    # Split by widget using regex directly on the full string? 
-    # Actually, grouping by line is safer for CSV integrity.
     lines = split(raw_csv, "\n")
     groups = Dict{String, Vector{String}}()
     
@@ -71,19 +130,19 @@ function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
     end
 
     for (name, rows) in groups
-        # Functional text cleaning
         clean_name = replace(name, r"[^a-zA-Z0-9]" => "_")
+        # Truncate long names
+        if length(clean_name) > 50; clean_name = clean_name[1:50]; end
         
-        # Heuristic to find header
+        # Header Heuristics
         header_idx = findfirst(l -> occursin(r"\",\"(Symbol|Name|Scan Name)\"", l), rows)
         header_idx = isnothing(header_idx) ? 1 : header_idx
         
-        # Build DataFrame in memory
         io = IOBuffer()
         println(io, "\"Timestamp\"," * rows[header_idx])
         for i in (header_idx+1):length(rows)
-             # Filter garbage lines
-             if !occursin(r"\",\"(Symbol|Name)\"", rows[i])
+             # Skip repeated headers
+             if !occursin(r"\",\"(Symbol|Name|Scan Name)\"", rows[i])
                  println(io, "\"$current_ts\"," * rows[i])
              end
         end
@@ -93,7 +152,7 @@ function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
             df = CSV.read(io, DataFrame)
             push!(widgets, WidgetTable(name, clean_name, df))
         catch e
-            @warn "Failed to parse $name"
+            @warn "Parse Fail: $name"
         end
     end
     return widgets
@@ -104,42 +163,41 @@ function save_widget(w::WidgetTable)
     
     if isfile(path)
         old_df = CSV.read(path, DataFrame)
-        # The power of DataFrames.jl: vcat + unique + sort in one chain
+        # 🦄 DataFrames Power: Union Merge + Unique + Sort
         final_df = vcat(old_df, w.data, cols=:union)
-        unique!(final_df, [:Timestamp, :Symbol])
+        unique!(final_df, [:Timestamp, :Symbol]) # Dedupe
         sort!(final_df, :Timestamp)
         CSV.write(path, final_df)
     else
         CSV.write(path, w.data)
     end
-    @info "  Saved: $(w.clean_name) ($(nrow(w.data)) rows)"
+    @info "  💾 Saved: $(w.clean_name) ($(nrow(w.data)) new rows)"
 end
 
-# --- 🏃 Main Pipeline ---
+# --- 🏃 Main Execution ---
 function main()
     mkpath(OUTPUT_DIR)
     
-    # This is the "Julia Enthusiast" Pipeline syntax:
     try
-        connect_and_scroll() |> 
-        extract_raw_csv      |> 
-        parse_widgets        .|> # Broadcast (map) over the vector of widgets
-        save_widget
+        # The "Enthusiast Pipeline" 🟣
+        page = setup_page()
+        data = extract_data(page)
+        widgets = parse_widgets(data)
         
-        @info "✅ Pipeline Complete."
+        if isempty(widgets)
+            @warn "No widgets parsed!"
+            exit(0)
+        end
+
+        # Broadcasting save over the vector
+        widgets .|> save_widget
+        
+        @info "✅ Pipeline Success. ($(length(widgets)) widgets processed)"
     catch e
-        @error "Pipeline Crashed" exception=(e, catch_backtrace())
+        @error "Pipeline Failed" exception=(e, catch_backtrace())
         exit(1)
     end
 end
-
-# Helper to unwrap dicts (same as before)
-function safe_unwrap(res)
-    isa(res, Dict) ? (haskey(res,"value") ? res["value"] : (haskey(res,"result") ? safe_unwrap(res["result"]) : res)) : res
-end
-
-# (Insert JS_PAYLOAD const here from previous response)
-const JS_PAYLOAD = "..." # Keep the simplified JS string
 
 if abspath(PROGRAM_FILE) == @__FILE__
     main()
