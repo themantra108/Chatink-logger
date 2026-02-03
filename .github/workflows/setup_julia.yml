@@ -17,20 +17,19 @@ jobs:
       - name: Set up Julia 🟣
         uses: julia-actions/setup-julia@v2
         with:
-          version: '1'
+          version: '1.10'
 
       - name: Generate Dependency Files 📦
         run: |
-          # We run the Pkg commands to generate the TOML files
           julia -e '
             using Pkg
             Pkg.activate(".")
             
-            # Add your packages here
-            Pkg.add("ChromeDevToolsLite")
+            # 1. Add Packages
+            Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl")
             Pkg.add("Dates")
             
-            # Lock the versions
+            # 2. Lock Versions
             Pkg.resolve()
             Pkg.instantiate()
           '
@@ -42,7 +41,6 @@ jobs:
           
           git add Project.toml Manifest.toml
           
-          # Only commit if files changed/created
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
