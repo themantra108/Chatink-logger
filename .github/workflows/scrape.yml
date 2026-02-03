@@ -1,21 +1,77 @@
-      # ... (Previous steps remain the same) ...
+name: Chartink Scraper (Every 5 Mins) 📈
+
+on:
+  workflow_dispatch:      # Manual trigger
+  schedule:
+    # 🕒 9:15 AM to 3:30 PM IST (Market Hours)
+    # UTC: 03:45 to 10:00 (approx)
+    - cron: '*/5 3-11 * * 1-5'
+
+permissions:
+  contents: write
+
+jobs:
+  scrape-dashboard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository 🛎️
+        uses: actions/checkout@v4
+
+      - name: Set up Julia 🟣
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+
+      - name: Install Dependencies 📦
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl"); Pkg.instantiate()'
+
+      - name: Start Headless Chrome 🚀
+        run: |
+          # Launch Chrome with "Real User" flags
+          google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" &
+          
+          # Wait for Chrome to be ready
+          echo "Waiting for Chrome..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:9222/json/version > /dev/null; then
+              echo "✅ Chrome is ready!"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "❌ Chrome failed to start."
+          exit 1
+
+      - name: Run Scraper 🕸️
+        run: julia --project=. scraper.jl
+
+      # Optional: Upload debug file if something goes wrong
+      - name: Upload Debug Artifact 🐞
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-html
+          path: debug_error.html
+          if-no-files-found: ignore
 
       - name: Commit and Push 💾
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 1. Pull FIRST (Safe because we haven't touched chartink_history.csv yet)
+          # 1. Pull Latest History FIRST (Safe because we haven't touched the file yet)
           git pull --rebase
           
-          # 2. Append the temp data to the main history file
-          # (If history file doesn't exist, this creates it)
+          # 2. Append the new chunk to the main history file
           if [ -f new_chunk.csv ]; then
+            # If main file doesn't exist, this creates it. If it does, it appends.
             cat new_chunk.csv >> chartink_history.csv
             rm new_chunk.csv
-            echo "✅ Data appended successfully."
+            echo "✅ Data merged successfully."
           else
-            echo "⚠️ No new data chunk found."
+            echo "⚠️ No new data chunk found to merge."
             exit 0
           fi
           
