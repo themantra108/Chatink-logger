@@ -1,62 +1,28 @@
-name: Chartink Scraper (Every 5 Mins) 📈
-
-on:
-  workflow_dispatch:
-  schedule:
-    # 🕒 9:15 AM to 3:30 PM IST (approx)
-    - cron: '*/5 3-11 * * 1-5'
-
-permissions:
-  contents: write
-
-jobs:
-  scrape-dashboard:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository 🛎️
-        uses: actions/checkout@v4
-
-      - name: Set up Julia 🟣
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: '1.10'
-
-      - name: Install Dependencies 📦
-        run: |
-          julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl"); Pkg.instantiate()'
-
-      - name: Start Headless Chrome 🚀
-        run: |
-          # The "Disguise" flags are critical for Chartink
-          google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" &
-          
-          # Wait loop
-          echo "Waiting for Chrome..."
-          for i in {1..30}; do
-            if curl -s http://127.0.0.1:9222/json/version > /dev/null; then
-              echo "✅ Chrome is ready!"
-              exit 0
-            fi
-            sleep 1
-          done
-          exit 1
-
-      - name: Run Scraper 🕸️
-        run: julia --project=. scraper.jl
+      # ... (Previous steps remain the same) ...
 
       - name: Commit and Push 💾
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 1. Stage and Commit the NEW data LOCALLY first
+          # 1. Pull FIRST (Safe because we haven't touched chartink_history.csv yet)
+          git pull --rebase
+          
+          # 2. Append the temp data to the main history file
+          # (If history file doesn't exist, this creates it)
+          if [ -f new_chunk.csv ]; then
+            cat new_chunk.csv >> chartink_history.csv
+            rm new_chunk.csv
+            echo "✅ Data appended successfully."
+          else
+            echo "⚠️ No new data chunk found."
+            exit 0
+          fi
+          
+          # 3. Stage and Commit
           git add chartink_history.csv
           timestamp=$(date -u)
           git commit -m "📈 Data: ${timestamp}" || echo "No changes to commit"
           
-          # 2. NOW pull any remote changes (rebase puts your commit on top)
-          git pull --rebase
-          
-          # 3. Finally, push the result
+          # 4. Push
           git push
