@@ -26,15 +26,24 @@ jobs:
       - name: Cache Julia artifacts 💾
         uses: julia-actions/cache@v2
 
-      # 📦 INSTANTIATE: Robust dependency install
+      # 📦 INSTANTIATE: The Bulletproof Version 🛡️
       - name: Install Dependencies 📦
         run: |
           julia --project=. -e '
             using Pkg
-            Pkg.resolve()      # Fixes any manifest mismatches
-            Pkg.instantiate()  # Downloads all artifacts
-            Pkg.precompile()   # Compiles them before running
-          '
+            
+            # 1. 📞 Get the "Phone Book" (Registry) FIRST
+            Pkg.Registry.update()
+            
+            # 2. 🧱 Download packages & artifacts (Instantiate)
+            Pkg.instantiate()
+            
+            # 3. 🔧 Fix any Manifest issues (Resolve)
+            Pkg.resolve()
+            
+            # 4. 🚀 Compile
+            Pkg.precompile()
+
 
       - name: Start Headless Chrome 🚀
         run: |
