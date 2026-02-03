@@ -29,9 +29,7 @@ jobs:
           julia --project=. -e '
             using Pkg
             Pkg.Registry.update()
-            Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl")
-            Pkg.add("Dates")
-            Pkg.add("JSON")
+            Pkg.add(["ChromeDevToolsLite.jl","Dates" ,"Json" ,"Dataframes","CSV" ])
             Pkg.resolve()
             Pkg.instantiate()
             Pkg.precompile()
