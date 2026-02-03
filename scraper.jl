@@ -1,21 +1,24 @@
 using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 
 # --- 🧱 Configuration ---
-const TARGET_URLS = [
-    # "https://chartink.com/dashboard/208896",  # 🛑 Commented out to focus on the 2nd URL
-    "https://chartink.com/dashboard/419640"     # 🎯 The Target
+# Define URL + Folder Name pairs
+const DASHBOARDS = [
+    (url="https://chartink.com/dashboard/208896", folder="Stocks_Sectors"),
+    (url="https://chartink.com/dashboard/419640", folder="Market_Condition")
 ]
-const OUTPUT_DIR = "chartink_data"
+
+const OUTPUT_ROOT = "chartink_data"
 
 struct WidgetTable
     name::String
     clean_name::String
     data::DataFrame
+    subfolder::String  # 🆕 Tracks which folder this belongs to
 end
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-# --- 🧠 JS Logic (Deep Scan + Header Cleaner) ---
+# --- 🧠 JS Logic (Standard) ---
 const JS_PAYLOAD = """
 (() => {
     try {
@@ -23,7 +26,6 @@ const JS_PAYLOAD = """
         const cleanBody = (txt) => txt ? txt.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         const cleanHeader = (txt) => txt ? txt.replace(/Sort table by.*/gi, "").trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
 
-        // 1️⃣ STANDARD TABLE SCAN
         const nodes = document.querySelectorAll("table, div.dataTables_wrapper");
         nodes.forEach((node, i) => {
             let name = "Unknown Widget " + i;
@@ -49,7 +51,6 @@ const JS_PAYLOAD = """
                 if (row.innerText.includes("No data")) return;
                 const cells = Array.from(row.querySelectorAll("th, td"));
                 if (!cells.length) return;
-
                 const isHeader = row.querySelector("th") !== null;
                 let line = cells.map(c => {
                     let raw = c.innerText;
@@ -59,11 +60,9 @@ const JS_PAYLOAD = """
             });
         });
 
-        // 2️⃣ SPECIAL HUNTER (Breadth/Condition/Ratio)
         const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6, div.card-header");
         headings.forEach(h => {
             let title = h.innerText.trim();
-            // Expanded keywords to catch more widgets
             if (/Market|Condition|Breadth|Ratio|Indicator|Scan/i.test(title)) {
                 let container = h.nextElementSibling;
                 if (!container && h.parentElement) container = h.parentElement.nextElementSibling;
@@ -72,9 +71,8 @@ const JS_PAYLOAD = """
                     if (table) {
                         Array.from(table.querySelectorAll("tr")).forEach(row => {
                              let cells = row.querySelectorAll("td, th");
-                             const isHeader = row.querySelector("th") !== null;
                              if (cells.length > 0) {
-                                 let line = Array.from(cells).map(c => '"' + (isHeader ? cleanHeader(c.innerText) : cleanBody(c.innerText)) + '"').join(",");
+                                 let line = Array.from(cells).map(c => '"' + (c.tagName==="TH" ? cleanHeader(c.innerText) : cleanBody(c.innerText)) + '"').join(",");
                                  output.push('"MANUAL_CATCH_' + cleanBody(title) + '",' + line);
                              }
                         });
@@ -95,14 +93,15 @@ function safe_unwrap(res)
     isa(res, Dict) ? (haskey(res,"value") ? res["value"] : (haskey(res,"result") ? safe_unwrap(res["result"]) : res)) : res
 end
 
-function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
-    @info "🧠 Parsing $(length(raw_csv)) bytes..."
+# Updated: Accepts folder_name to tag widgets
+function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTable}
+    @info "🧠 Parsing $(Base.format_bytes(length(raw_csv))) for folder: $folder_name"
     widgets = WidgetTable[]
     current_ts = get_ist()
-    lines = split(replace(raw_csv, "\r" => ""), "\n")
+    
     groups = Dict{String, Vector{String}}()
     
-    for line in lines
+    for line in eachline(IOBuffer(raw_csv))
         if length(line) < 5 || !startswith(line, "\""); continue; end
         m = match(r"^\"([^\"]+)\"", line)
         key = isnothing(m) ? "Unknown" : replace(m.captures[1], "MANUAL_CATCH_" => "")
@@ -129,11 +128,8 @@ function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
         
         valid_count = 0
         for i in start_row:length(rows)
-            # Relaxed column check (allow +/- 2 variance for messy footers)
             if abs(length(split(rows[i], "\",\"")) - expected_cols) > 2; continue; end
-            
             clean_row = replace(rows[i], r"^\"[^\"]+\"," => "")
-            # Skip rows that look like headers re-appearing
             if !occursin(r"\"(Symbol|Name|Date)\"", clean_row)
                  println(io, "\"$current_ts\"," * clean_row)
                  valid_count += 1
@@ -144,7 +140,8 @@ function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
             seekstart(io)
             try
                 df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
-                push!(widgets, WidgetTable(name, clean_name, df))
+                # 🆕 Pass folder_name to struct
+                push!(widgets, WidgetTable(name, clean_name, df, folder_name))
             catch; end
         end
     end
@@ -152,7 +149,12 @@ function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
 end
 
 function save_widget(w::WidgetTable)
-    path = joinpath(OUTPUT_DIR, w.clean_name * ".csv")
+    # 🆕 Construct path with Subfolder
+    folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
+    mkpath(folder_path) # Ensure subfolder exists
+    
+    path = joinpath(folder_path, w.clean_name * ".csv")
+    
     try
         if isfile(path)
             old_df = CSV.read(path, DataFrame)
@@ -163,33 +165,36 @@ function save_widget(w::WidgetTable)
         else
             CSV.write(path, w.data)
         end
-        @info "  💾 Saved: $(w.clean_name)"
+        @info "  💾 Saved: $(w.subfolder) / $(w.clean_name)"
     catch e
         @warn "Schema Conflict for $(w.clean_name). Resetting file."
         CSV.write(path, w.data)
     end
 end
 
-function process_dashboard(page, url)
-    @info "🧭 Navigating to: $url"
+function process_dashboard(page, dashboard)
+    url = dashboard.url
+    folder = dashboard.folder
     
-    # 1. Clear previous state (Critical for Multi-URL)
+    @info "🧭 Navigating to: $url (Folder: $folder)"
     ChromeDevToolsLite.evaluate(page, "window._data = null;")
     
-    ChromeDevToolsLite.goto(page, url)
+    retry_nav = retry(() -> ChromeDevToolsLite.goto(page, url), delays=[2.0, 5.0, 10.0])
+    try
+        retry_nav()
+    catch
+        @error "Failed to load $url"
+        return WidgetTable[]
+    end
     
-    # 2. Wait for network settle
     sleep(5)
     
-    # 3. Wait for Tables
     for i in 1:60
         res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0") |> safe_unwrap
         if res == true; break; end
         sleep(1)
-        if i % 10 == 0; @info "   ...still waiting for tables..."; end
     end
 
-    # 4. Deep Scroll
     @info "📜 Scrolling..."
     h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight") |> safe_unwrap
     h = isa(h, Number) ? h : 5000
@@ -199,7 +204,6 @@ function process_dashboard(page, url)
     end
     sleep(3) 
     
-    # 5. Extract
     @info "⚡ Extracting..."
     ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
     
@@ -207,7 +211,7 @@ function process_dashboard(page, url)
     len = try parse(Int, string(len_res)) catch; 0 end
     
     if len == 0
-        @warn "⚠️ No data found on $url. (Check if dashboard is empty)"
+        @warn "⚠️ No data found on $url."
         return WidgetTable[]
     end
     
@@ -217,28 +221,24 @@ function process_dashboard(page, url)
         print(buf, chunk)
     end
     
-    return parse_widgets(String(take!(buf)))
+    # 🆕 Pass folder name to parser
+    return parse_widgets(String(take!(buf)), folder)
 end
 
 function main()
-    mkpath(OUTPUT_DIR)
+    mkpath(OUTPUT_ROOT)
     
     try
         @info "🔌 Connecting to Chrome..."
         page = ChromeDevToolsLite.connect_browser()
         
-        for url in TARGET_URLS
-            try
-                @info "--- [TARGET] $url ---"
-                widgets = process_dashboard(page, url)
-                
-                if !isempty(widgets)
-                    widgets .|> save_widget
-                    @info "✅ Success: $(length(widgets)) widgets saved."
-                end
-                
-            catch e
-                @error "❌ Failed to process $url" exception=(e, catch_backtrace())
+        for db in DASHBOARDS
+            @info "--- [TARGET] $(db.folder) ---"
+            widgets = process_dashboard(page, db)
+            
+            if !isempty(widgets)
+                widgets .|> save_widget
+                @info "✅ Success."
             end
         end
         
