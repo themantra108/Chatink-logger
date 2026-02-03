@@ -1,11 +1,15 @@
 using ChromeDevToolsLite
 using Dates
-using Base64
 
-println("🚀 Starting DIAGNOSTIC Job at $(now())")
+# 🕒 Helper for Indian Standard Time
+function get_ist()
+    return now(Dates.UTC) + Hour(5) + Minute(30)
+end
+
+println("🚀 Starting Scraper Job at $(get_ist()) IST")
 
 try
-    # 1. Connect
+    # Connect to the browser (GitHub Actions starts it for us)
     page = ChromeDevToolsLite.connect_browser() 
     println("✅ Connected to Chrome!")
 
@@ -13,46 +17,63 @@ try
     println("🧭 Navigating to: $target_url")
     ChromeDevToolsLite.goto(page, target_url)
 
-    # 2. Wait a long time (30s) to rule out slow internet
-    println("⏳ Waiting 30s for full render...")
-    sleep(30)
+    # ⏳ Wait for Chartink to load
+    println("⏳ Waiting 20 seconds for data...")
+    sleep(20)
 
-    # 3. 📸 TAKE A SCREENSHOT (The Smoking Gun)
-    # This will save a PNG so you can see if it's a blank screen or a login page
-    println("📸 Taking screenshot...")
-    screenshot_json = ChromeDevToolsLite.execute_cdp(page, "Page.captureScreenshot", Dict("format" => "png"))
+    println("⛏️ Extracting table data...")
     
-    if haskey(screenshot_json, "data")
-        # Decode base64 and save to file
-        open("debug_screenshot.png", "w") do io
-            write(io, base64decode(screenshot_json["data"]))
-        end
-        println("✅ Screenshot saved to debug_screenshot.png")
+    # 🛠️ THE FIX: Join rows with newlines inside JS
+    extract_js = """
+    (() => {
+        const rows = document.querySelectorAll("table tr");
+        if (rows.length === 0) return "NO DATA FOUND";
+        
+        const data = Array.from(rows).map(row => {
+            const cells = row.querySelectorAll("th, td");
+            // Join cells with comma for CSV format
+            // Escape quotes to prevent CSV breakage
+            return Array.from(cells).map(c => {
+                 let text = c.innerText.trim();
+                 text = text.replace(/"/g, '""'); 
+                 return `"\${text}"`;
+            }).join(",");
+        });
+        
+        return data.join("\\n");
+    })()
+    """
+    
+    result = ChromeDevToolsLite.evaluate(page, extract_js)
+    
+    # Handle the wrapper
+    data_string = isa(result, Dict) && haskey(result, "value") ? result["value"] : result
+
+    csv_file = "chartink_history.csv"
+    
+    if data_string == "NO DATA FOUND" || isempty(data_string)
+        println("⚠️ 0 ROWS FOUND.")
+        exit(1) # Fail the job so we know something is wrong
     else
-        println("❌ Failed to capture screenshot.")
+        # Split back into lines to count them
+        rows = split(data_string, "\n")
+        
+        # Append to file
+        current_time = get_ist()
+        open(csv_file, "a") do io
+            count = 0
+            for row in rows
+                # Filter out garbage headers/empty rows
+                if length(row) > 10 && !contains(row, "No data for table")
+                    println(io, "\"$(current_time)\",$row")
+                    count += 1
+                end
+            end
+            println("✅ Appended $count clean rows to $csv_file")
+        end
     end
-
-    # 4. 📄 DUMP FULL HTML
-    println("💾 Saving full HTML...")
-    html_dump = ChromeDevToolsLite.evaluate(page, "document.documentElement.outerHTML")
-    html_content = isa(html_dump, Dict) ? html_dump["value"] : html_dump
-    
-    open("debug_page.html", "w") do io
-        print(io, html_content)
-    end
-    println("✅ HTML saved to debug_page.html")
-
-    # 5. 🔍 PRINT VISIBLE TEXT (To Console)
-    # This tells us if the bot can "read" any text at all
-    println("-" ^ 20, " VISIBLE PAGE TEXT ", "-" ^ 20)
-    text_check = ChromeDevToolsLite.evaluate(page, "document.body.innerText")
-    body_text = isa(text_check, Dict) ? text_check["value"] : text_check
-    
-    # Print first 500 chars only to avoid spamming logs
-    println(first(body_text, 500)) 
-    println("-" ^ 60)
 
 catch e
-    println("💥 Critical Error: $e")
+    println("💥 Error occurred: $e")
     rethrow(e)
 end
