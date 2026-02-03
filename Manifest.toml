@@ -19,9 +19,7 @@ version = "0.1.9"
 
 [[deps.ChromeDevToolsLite]]
 deps = ["Base64", "HTTP", "JSON3", "Logging"]
-git-tree-sha1 = "d6c00431d56b9dcdb0c1e7a9036598e8ffd73f82"
-repo-rev = "main"
-repo-url = "https://github.com/svilupp/ChromeDevToolsLite.jl"
+git-tree-sha1 = "d0d34631bdc3a7ae9fc68d7c1dc31b2676b911e5"
 uuid = "fd981815-49ad-43be-956f-1ba144983534"
 version = "0.1.0"
 
