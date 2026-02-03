@@ -5,24 +5,21 @@ using Dates
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
 # ⏳ Helper: Smart Waiting
+# REVERTED: Removed the 'returnByValue' arg that caused the crash.
 function wait_for_selector(page, selector; timeout=60, poll_interval=1)
     start_time = time()
     while time() - start_time < timeout
         check_js = "document.querySelector('$selector') !== null"
+        result = ChromeDevToolsLite.evaluate(page, check_js)
         
-        # 🔧 Force returnByValue here too, just to be safe
-        result = ChromeDevToolsLite.evaluate(page, check_js; returnByValue=true)
-        
-        # Handle various return types
+        # Simple boolean unwrap
         val = false
-        if isa(result, Dict)
-            if haskey(result, "value")
-                val = result["value"]
-            elseif haskey(result, "result") && isa(result["result"], Dict)
-                 val = get(result["result"], "value", false)
-            end
+        if isa(result, Dict) && haskey(result, "value")
+             val = result["value"]
+        elseif isa(result, Dict) && haskey(result, "result")
+             val = get(result["result"], "value", false)
         else
-            val = result
+             val = result
         end
         
         if val == true
@@ -51,19 +48,22 @@ function main()
         
         sleep(5) 
 
-        @info "⚡ DOM Ready. Extracting..."
+        @info "⚡ DOM Ready. Running Scraper Logic..."
         
-        extract_js = """
+        # 1️⃣ EXECUTE SCRAPER (But don't return data yet!)
+        # We save the result to 'window._chartinkData'
+        setup_js = """
         (() => {
             const tables = document.querySelectorAll("table");
-            if (tables.length === 0) return "NO DATA FOUND";
+            if (tables.length === 0) {
+                window._chartinkData = "NO DATA FOUND";
+                return;
+            }
             
             let allRows = [];
 
             tables.forEach(table => {
                 let widgetName = "Unknown Widget";
-                
-                // 🏹 1. FIND WIDGET NAME
                 let current = table;
                 let depth = 0;
                 while (current && depth < 6) {
@@ -84,19 +84,14 @@ function main()
                     depth++;
                 }
                 
-                // 🏹 2. EXTRACT ROWS
                 const rows = table.querySelectorAll("tr");
                 const processedRows = Array.from(rows).map(row => {
                     const cells = row.querySelectorAll("th, td");
                     if (cells.length === 0) return null; 
-
                     const isHeader = row.querySelector("th") !== null;
                     const rowText = row.innerText;
-
                     if (rowText.includes("No data for table") || rowText.includes("Clause")) return null;
-
                     const safeWidget = widgetName.replace(/"/g, '""');
-
                     const cellData = Array.from(cells).map(c => {
                         let text = c.innerText.trim();
                         if (isHeader) {
@@ -106,49 +101,64 @@ function main()
                         text = text.replace(/"/g, '""'); 
                         return '"' + text + '"';
                     }).join(",");
-                    
                     return '"' + safeWidget + ""," + cellData;
                 });
-
                 allRows = allRows.concat(processedRows.filter(r => r));
             });
             
-            return allRows.join("\\n");
+            // SAVE TO GLOBAL VARIABLE
+            window._chartinkData = allRows.join("\\n");
+            return "DONE";
         })()
         """
+        ChromeDevToolsLite.evaluate(page, setup_js)
         
-        # 🔧 FIX: explicitly request 'returnByValue=true'
-        # This forces Chrome to serialize the object instead of sending a reference ID
-        result = ChromeDevToolsLite.evaluate(page, extract_js; returnByValue=true)
+        # 2️⃣ FETCH DATA IN CHUNKS
+        # We pull 50,000 chars at a time to avoid the "Object Reference" error
+        @info "📦 Fetching data chunks..."
         
-        data_string = ""
+        # Get total length
+        len_res = ChromeDevToolsLite.evaluate(page, "window._chartinkData.length")
+        total_len = isa(len_res, Dict) ? len_res["value"] : len_res
         
-        # 🛡️ SAFE UNWRAP (Updated)
-        if isa(result, Dict)
-            if haskey(result, "value")
-                data_string = result["value"]
-            elseif haskey(result, "result") && isa(result["result"], Dict) && haskey(result["result"], "value")
-                data_string = result["result"]["value"]
+        if total_len == 0 || total_len == "NO DATA FOUND"
+             @warn "⚠️ No data found."
+             return
+        end
+
+        full_data = ""
+        chunk_size = 50000
+        current_idx = 0
+        
+        while current_idx < total_len
+            # JS: slice the string
+            end_idx = min(current_idx + chunk_size, total_len)
+            chunk_js = "window._chartinkData.substring($current_idx, $end_idx)"
+            
+            chunk_res = ChromeDevToolsLite.evaluate(page, chunk_js)
+            
+            # Unwrap
+            chunk_val = ""
+            if isa(chunk_res, Dict)
+                 chunk_val = chunk_res["value"]
+            elseif isa(chunk_res, Dict) && haskey(chunk_res, "result")
+                 chunk_val = get(chunk_res["result"], "value", "")
             else
-                # Fallback: Check if we still got an objectId (which means it failed to serialize)
-                if haskey(result, "objectId") || (haskey(result, "result") && haskey(result["result"], "objectId"))
-                     @warn "⚠️ Received Object Reference instead of Value. Data might be too large."
-                else
-                     @warn "⚠️ Unexpected JSON structure: $(keys(result))"
-                end
-                data_string = ""
+                 chunk_val = chunk_res
             end
-        else
-            data_string = string(result)
+            
+            full_data = full_data * chunk_val
+            current_idx += chunk_size
         end
 
-        if data_string == "NO DATA FOUND" || isempty(data_string)
-            @warn "⚠️ No data found in tables (or empty return)."
-            return
+        if isempty(full_data) || full_data == "NO DATA FOUND"
+             @warn "⚠️ Data was empty after chunking."
+             return
         end
 
+        # 💾 Write to Chunk File
         temp_file = "new_chunk.csv"
-        rows = split(data_string, "\n")
+        rows = split(full_data, "\n")
         current_time = get_ist()
         
         open(temp_file, "w") do io
