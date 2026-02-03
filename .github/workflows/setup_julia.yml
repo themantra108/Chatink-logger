@@ -17,7 +17,7 @@ jobs:
       - name: Set up Julia 🟣
         uses: julia-actions/setup-julia@v2
         with:
-          version: '1.10'
+          version: '1'
 
       - name: Generate Dependency Files 📦
         run: |
