@@ -1,15 +1,9 @@
-name: Chartink Scraper (24/7 Every 5 Mins) 📈
+name: Chartink Scraper (24/7) 📈
 
 on:
   workflow_dispatch:      # Allows manual trigger
   schedule:
-    # 🕒 CRON SCHEDULE EXPLAINED:
-    # */5 = Every 5 minutes
-    # * = Every hour
-    # * = Every day
-    # * = Every month
-    # * = Every day of the week (Sun-Sat)
-    - cron: '*/5 * * * *'
+    - cron: '*/5 * * * *' # Every 5 minutes
 
 permissions:
   contents: write
@@ -27,16 +21,19 @@ jobs:
         with:
           version: '1.10'
 
+      # ⚡ CACHE: Saves ~2 mins per run
+      - name: Cache Julia artifacts 💾
+        uses: julia-actions/cache@v2
+
+      # 📦 INSTANTIATE: Fast install from Manifest.toml
       - name: Install Dependencies 📦
         run: |
-          julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl"); Pkg.instantiate()'
+          julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Start Headless Chrome 🚀
         run: |
-          # Launch Chrome with "Real User" flags to bypass detection
           google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" &
           
-          # Wait loop to ensure Chrome is ready
           echo "Waiting for Chrome..."
           for i in {1..30}; do
             if curl -s http://127.0.0.1:9222/json/version > /dev/null; then
@@ -51,38 +48,25 @@ jobs:
       - name: Run Scraper 🕸️
         run: julia --project=. scraper.jl
 
-      # Optional: Upload debug file if the script crashes
-      - name: Upload Debug Artifact 🐞
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-html
-          path: debug_error.html
-          if-no-files-found: ignore
-
       - name: Commit and Push Data 💾
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 1. Pull Latest History FIRST (Safe because we haven't touched chartink_history.csv yet)
+          # 1. Pull Latest History
           git pull --rebase
           
-          # 2. Append the new chunk to the main history file
-          if [ -f new_chunk.csv ]; then
-            # If main file doesn't exist, this creates it. If it does, it appends.
-            cat new_chunk.csv >> chartink_history.csv
-            rm new_chunk.csv
-            echo "✅ Data merged successfully."
+          # 2. Append Data
+          if [ -s new_chunk.csv ]; then
+             cat new_chunk.csv >> chartink_history.csv
+             rm new_chunk.csv
+             echo "✅ Data merged."
+             
+             # 3. Stage and Commit
+             git add chartink_history.csv
+             timestamp=$(date -u)
+             git commit -m "📈 Data: ${timestamp}" || echo "No changes to commit"
+             git push
           else
-            echo "⚠️ No new data chunk found to merge. Skipping commit."
-            exit 0
+             echo "⚠️ No new data chunk found to merge."
           fi
-          
-          # 3. Stage and Commit
-          git add chartink_history.csv
-          timestamp=$(date -u)
-          git commit -m "📈 Data: ${timestamp}" || echo "No changes to commit"
-          
-          # 4. Push
-          git push
