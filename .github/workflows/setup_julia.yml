@@ -27,7 +27,7 @@ jobs:
             Pkg.activate(".")
             
             # Add your packages here
-            Pkg.add(url="https://github.com/svilupp/ChromeDevToolsLite.jl")
+            Pkg.add("ChromeDevToolsLite.jl")
             Pkg.add("Dates")
             
             # Lock the versions
