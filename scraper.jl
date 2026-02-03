@@ -1,6 +1,21 @@
 using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 
 # ==============================================================================
+# 🧠 TYPE SYSTEM (The Julia Way)
+# ==============================================================================
+abstract type UpdateStrategy end
+struct SnapshotStrategy <: UpdateStrategy end   # For Stock Lists (Block Replace)
+struct TimeSeriesStrategy <: UpdateStrategy end # For Market Condition (Upsert)
+
+struct WidgetTable{T <: UpdateStrategy}
+    name::String
+    clean_name::String
+    data::DataFrame
+    subfolder::String
+    strategy::T  # The "Tag" that drives logic
+end
+
+# ==============================================================================
 # 🧱 CONFIGURATION
 # ==============================================================================
 const TARGET_URLS = [
@@ -9,24 +24,16 @@ const TARGET_URLS = [
 ]
 const OUTPUT_ROOT = "chartink_data"
 
-# Regex & Map
 const DATE_REGEX = r"(\d+)(?:st|nd|rd|th)?\s+([a-zA-Z]+)"
 const MONTH_MAP = Dict{SubString{String}, Int}(
     "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4, "May" => 5, "Jun" => 6,
     "Jul" => 7, "Aug" => 8, "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12
 )
 
-struct WidgetTable
-    name::String
-    clean_name::String
-    data::DataFrame
-    subfolder::String 
-end
-
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
 # ==============================================================================
-# 📅 DATE LOGIC
+# 📅 PARSING LOGIC
 # ==============================================================================
 
 function parse_chartink_date(date_str::AbstractString)
@@ -38,56 +45,125 @@ function parse_chartink_date(date_str::AbstractString)
     return (day, mon)
 end
 
-function add_derived_columns!(df::DataFrame)
-    # 1. Create Scan_Date (The key for Block Replacement)
+function determine_strategy(df::DataFrame)
+    if "Date" in names(df)
+        return TimeSeriesStrategy()
+    else
+        return SnapshotStrategy()
+    end
+end
+
+function enrich_dataframe!(df::DataFrame, strategy::TimeSeriesStrategy)
+    # Logic for Market Condition (Date inference)
+    nrows = nrow(df)
+    full_dates = Vector{Union{Date, Missing}}(missing, nrows)
+    scrape_date = Date(get_ist())
+    current_year = year(scrape_date)
+    last_month = 0
+    date_col = df.Date
+    
+    for i in 1:nrows
+        raw_val = string(date_col[i])
+        (day, mon) = parse_chartink_date(raw_val)
+        if day == 0 || mon == 0; continue; end
+        
+        if last_month == 0; last_month = mon; end
+        if mon > (last_month + 6); current_year -= 1;
+        elseif mon < (last_month - 6); current_year += 1; end
+        
+        try
+            cand = Date(current_year, mon, day)
+            if cand > (scrape_date + Day(2)) # Future Guard
+                 cand = Date(current_year - 1, mon, day)
+                 current_year -= 1
+            end
+            full_dates[i] = cand
+        catch; end
+        last_month = mon
+    end
+    df[!, :Full_Date] = full_dates
+end
+
+function enrich_dataframe!(df::DataFrame, strategy::SnapshotStrategy)
+    # Logic for Stock Lists (Timestamp -> Scan_Date)
     if "Timestamp" in names(df)
         df[!, :Scan_Date] = Date.(df[!, :Timestamp])
-    elseif "Date" in names(df)
-         # Fallback for widgets without timestamp (rare)
-         # We will fill this in the next step
-    end
-
-    # 2. Date Column Parsing (History Logic)
-    if "Date" in names(df)
-        nrows = nrow(df)
-        full_dates = Vector{Union{Date, Missing}}(missing, nrows)
-        scrape_date = Date(get_ist())
-        current_year = year(scrape_date)
-        last_month = 0
-        date_col = df.Date
-        
-        for i in 1:nrows
-            raw_val = string(date_col[i])
-            (day, mon) = parse_chartink_date(raw_val)
-            if day == 0 || mon == 0; continue; end
-            
-            if last_month == 0; last_month = mon; end
-            
-            if mon > (last_month + 6); current_year -= 1;
-            elseif mon < (last_month - 6); current_year += 1; end
-            
-            try
-                cand = Date(current_year, mon, day)
-                # Future Guard
-                if cand > (scrape_date + Day(2))
-                     cand = Date(current_year - 1, mon, day)
-                     current_year -= 1
-                end
-                full_dates[i] = cand
-            catch; end
-            last_month = mon
-        end
-        df[!, :Full_Date] = full_dates
-        
-        # If Scan_Date was missing, assume the inferred Full_Date is the grouping key
-        if !("Scan_Date" in names(df))
-             df[!, :Scan_Date] = full_dates
-        end
     end
 end
 
 # ==============================================================================
-# 🧠 JAVASCRIPT PAYLOAD
+# 💾 SAVING LOGIC (Using Multiple Dispatch)
+# ==============================================================================
+
+# Common Saver Wrapper
+function save_to_disk(w::WidgetTable, final_df::DataFrame)
+    folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
+    mkpath(folder_path)
+    path = joinpath(folder_path, w.clean_name * ".csv")
+    
+    # Always sort Newest -> Oldest before writing
+    sort!(final_df, :Timestamp, rev=true)
+    CSV.write(path, final_df)
+    @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name) ($(typeof(w.strategy)))"
+end
+
+# VERSION 1: The "Snapshot" Saver (For Stock Lists)
+# Logic: Delete old rows for the current Scan_Date, insert new ones.
+function save_widget(w::WidgetTable{SnapshotStrategy})
+    path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
+    
+    if !isfile(path)
+        save_to_disk(w, w.data)
+        return
+    end
+
+    old_df = CSV.read(path, DataFrame)
+    
+    # Check for schema drift or missing columns in old file
+    if !("Scan_Date" in names(old_df))
+        # Hotfix for legacy files: If Scan_Date missing, just Append
+        final_df = vcat(w.data, old_df, cols=:union)
+    else
+        # The Snapshot Logic
+        active_dates = unique(dropmissing(w.data, :Scan_Date).Scan_Date)
+        
+        # In-place filtering (Memory efficient)
+        filter!(row -> ismissing(row.Scan_Date) || !(row.Scan_Date in active_dates), old_df)
+        
+        final_df = vcat(w.data, old_df, cols=:union)
+    end
+    
+    save_to_disk(w, final_df)
+end
+
+# VERSION 2: The "Time Series" Saver (For Market Condition)
+# Logic: Upsert based on Date text (e.g., "2nd Feb").
+function save_widget(w::WidgetTable{TimeSeriesStrategy})
+    path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
+    
+    if !isfile(path)
+        save_to_disk(w, w.data)
+        return
+    end
+
+    old_df = CSV.read(path, DataFrame)
+    combined_df = vcat(old_df, w.data, cols=:union)
+    
+    # Deduplication Key
+    dedupe_cols = "Date" in names(combined_df) ? [:Date] : Symbol[]
+    
+    # Sort first so 'unique!' keeps the newest
+    sort!(combined_df, :Timestamp, rev=true)
+    
+    if !isempty(dedupe_cols)
+        unique!(combined_df, dedupe_cols)
+    end
+    
+    save_to_disk(w, combined_df)
+end
+
+# ==============================================================================
+# 🧠 JS & PIPELINE
 # ==============================================================================
 const JS_PAYLOAD = """
 (() => {
@@ -95,7 +171,7 @@ const JS_PAYLOAD = """
         let output = [];
         const cleanBody = (txt) => txt ? txt.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         const cleanHeader = (txt) => txt ? txt.replace(/Sort table by.*/gi, "").trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
-
+        
         const nodes = document.querySelectorAll("table, div.dataTables_wrapper");
         nodes.forEach((node, i) => {
             let name = "Unknown Widget " + i;
@@ -105,31 +181,26 @@ const JS_PAYLOAD = """
                 while (sib) {
                     let txt = sib.innerText ? sib.innerText.trim() : "";
                     if (txt.length > 2 && txt.length < 150 && !/Loading|Error|Run Scan/.test(txt)) {
-                        name = txt.split('\\n')[0].trim();
-                        break;
+                        name = txt.split('\\n')[0].trim(); break;
                     }
                     sib = sib.previousElementSibling;
                 }
                 if (!name.includes("Unknown")) break;
                 curr = curr.parentElement;
             }
-
             let rows = (node.tagName === "TABLE") ? node.querySelectorAll("tr") : node.querySelectorAll("table tr");
             if (!rows.length) return;
-
             Array.from(rows).forEach(row => {
                 if (row.innerText.includes("No data")) return;
                 const cells = Array.from(row.querySelectorAll("th, td"));
                 if (!cells.length) return;
                 const isHeader = row.querySelector("th") !== null;
-                let line = cells.map(c => {
-                    let raw = c.innerText;
-                    return '"' + (isHeader ? cleanHeader(raw) : cleanBody(raw)) + '"';
-                }).join(",");
+                let line = cells.map(c => '"' + (isHeader ? cleanHeader(c.innerText) : cleanBody(c.innerText)) + '"').join(",");
                 output.push('"' + cleanBody(name) + '",' + line);
             });
         });
 
+        // Special Headers (Market Condition)
         const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6, div.card-header");
         headings.forEach(h => {
             let title = h.innerText.trim();
@@ -150,20 +221,11 @@ const JS_PAYLOAD = """
                 }
             }
         });
-
         window._data = [...new Set(output)].join("\\n");
         return "DONE";
     } catch (e) { return "ERROR: " + e.toString(); }
 })()
 """
-
-# ==============================================================================
-# 🛠️ PIPELINE FUNCTIONS
-# ==============================================================================
-
-function safe_unwrap(res)
-    isa(res, Dict) ? (haskey(res,"value") ? res["value"] : (haskey(res,"result") ? safe_unwrap(res["result"]) : res)) : res
-end
 
 function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTable}
     @info "🧠 Parsing widgets for folder: [$folder_name]"
@@ -184,7 +246,6 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
         
         io = IOBuffer()
         start_row, expected_cols = 1, 0
-        
         if !isnothing(header_idx)
             raw_header = replace(rows[header_idx], r"^\"[^\"]+\"," => "")
             println(io, "\"Timestamp\"," * raw_header)
@@ -210,71 +271,27 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
             seekstart(io)
             try
                 df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
-                add_derived_columns!(df) 
-                push!(widgets, WidgetTable(name, clean_name, df, folder_name))
+                
+                # 🧠 JULIA WAY: Determine Strategy & Enrich
+                strat = determine_strategy(df)
+                enrich_dataframe!(df, strat)
+                
+                push!(widgets, WidgetTable(name, clean_name, df, folder_name, strat))
             catch; end
         end
     end
     return widgets
 end
 
-# 🔥 THE SNAPSHOT LOGIC ENGINE
-function save_widget(w::WidgetTable)
-    folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
-    mkpath(folder_path)
-    path = joinpath(folder_path, w.clean_name * ".csv")
-    
-    try
-        if isfile(path)
-            old_df = CSV.read(path, DataFrame)
-            
-            # Ensure old DF has the grouping column for logic
-            if !("Scan_Date" in names(old_df))
-                # Re-run logic to fill holes in old CSVs if column missing
-                add_derived_columns!(old_df)
-            end
-            
-            # 1. Identify "Active Dates" in the NEW batch
-            # Usually just [Today], but could be multiple if table has history
-            if "Scan_Date" in names(w.data)
-                active_dates = unique(dropmissing(w.data, :Scan_Date).Scan_Date)
-                
-                # 2. DELETE everything in OLD CSV that matches these dates
-                # This removes "Intraday Decay" (stocks that fell off the list)
-                filtered_history = filter(row -> !(row.Scan_Date in active_dates), old_df)
-                
-                # 3. INSERT the FRESH batch
-                final_df = vcat(w.data, filtered_history, cols=:union)
-            else
-                 # Fallback for tables with no dates: just replace top? 
-                 # Safer to just append/dedupe if no date logic possible
-                 final_df = vcat(w.data, old_df, cols=:union)
-            end
-
-            # 4. SORT: Newest -> Oldest (Row 2 is latest)
-            sort!(final_df, :Timestamp, rev=true)
-            
-            CSV.write(path, final_df)
-        else
-            sort!(w.data, :Timestamp, rev=true)
-            CSV.write(path, w.data)
-        end
-        @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name)"
-    catch e
-        @warn "Schema/Save Error for $(w.clean_name). Overwriting."
-        CSV.write(path, w.data)
-    end
-end
-
 function get_dashboard_name(page)
-    raw_title = ChromeDevToolsLite.evaluate(page, "document.title") |> safe_unwrap
+    raw_title = ChromeDevToolsLite.evaluate(page, "document.title") 
+    raw_title = isa(raw_title, Dict) ? raw_title["value"] : raw_title
     if isnothing(raw_title) || raw_title == ""; return "Unknown_Dashboard"; end
     
     clean_title = replace(raw_title, " - Chartink.com" => "") |> 
                   x -> replace(x, " - Chartink" => "") |>
                   x -> replace(x, r"[^a-zA-Z0-9 \-_]" => "") |> 
                   x -> replace(strip(x), " " => "_")
-                  
     return isempty(clean_title) ? "Dashboard_Unknown" : clean_title
 end
 
@@ -289,47 +306,45 @@ function process_dashboard(page, url)
     folder_name = get_dashboard_name(page)
     @info "🏷️ Identified Dashboard: $folder_name"
     
+    # Wait for tables
     for i in 1:60
-        res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0") |> safe_unwrap
-        if res == true; break; end
+        res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0")
+        val = isa(res, Dict) ? res["value"] : res
+        if val == true; break; end
         sleep(1)
     end
     
-    h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight") |> safe_unwrap
-    h = isa(h, Number) ? h : 5000
-    for s in 0:1000:h; ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)"); sleep(0.3); end
+    h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight")
+    h_val = isa(h, Dict) ? h["value"] : h
+    h_int = isa(h_val, Number) ? h_val : 5000
+    for s in 0:1000:h_int; ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)"); sleep(0.3); end
     sleep(3) 
     
     @info "⚡ Extracting..."
     ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
     
-    len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0") |> safe_unwrap
-    len = try parse(Int, string(len_res)) catch; 0 end
+    len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0")
+    len_val = isa(len_res, Dict) ? len_res["value"] : len_res
+    len = try parse(Int, string(len_val)) catch; 0 end
     
     if len == 0; @warn "⚠️ No data found on $url."; return WidgetTable[]; end
     
     buf = IOBuffer()
     for i in 0:50000:len
-        chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))") |> safe_unwrap
-        print(buf, chunk)
+        chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))")
+        val = isa(chunk, Dict) ? chunk["value"] : chunk
+        print(buf, val)
     end
     return parse_widgets(String(take!(buf)), folder_name)
 end
 
 function print_summary()
     @info "📊 --- MISSION REPORT ---"
-    if !isdir(OUTPUT_ROOT); @info "No data directory found."; return; end
-    
+    if !isdir(OUTPUT_ROOT); return; end
     for (root, dirs, files) in walkdir(OUTPUT_ROOT)
         level = count(c -> c == '/', replace(root, "\\" => "/")) - count(c -> c == '/', OUTPUT_ROOT)
-        indent = "  " ^ level
-        folder = basename(root)
-        if folder != basename(OUTPUT_ROOT)
-            println("📁 $indent$folder/")
-        end
-        for file in files
-            println("   $indent  📄 $file")
-        end
+        if level > 0; println("📁 $("  "^level)$(basename(root))/"); end
+        for file in files; println("   $("  "^level)  📄 $file"); end
     end
     @info "-------------------------"
 end
@@ -339,16 +354,11 @@ function main()
     try
         @info "🔌 Connecting to Chrome..."
         page = ChromeDevToolsLite.connect_browser()
-        
         for url in TARGET_URLS
             @info "--- [TARGET] $url ---"
             widgets = process_dashboard(page, url)
-            if !isempty(widgets)
-                widgets .|> save_widget
-                @info "✅ Dashboard Complete."
-            end
+            if !isempty(widgets); widgets .|> save_widget; @info "✅ Dashboard Complete."; end
         end
-        
         print_summary()
         @info "🎉 Scrape Cycle Complete."
     catch e
@@ -357,6 +367,4 @@ function main()
     end
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+if abspath(PROGRAM_FILE) == @__FILE__; main(); end
