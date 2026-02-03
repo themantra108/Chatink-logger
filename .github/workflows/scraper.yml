@@ -16,34 +16,30 @@ jobs:
       - name: Check out repository 🛎️
         uses: actions/checkout@v4
 
-      # 🟣 UPDATE: Using '1' pulls the latest stable version automatically
+      # 🟣 Uses the latest stable Julia version (currently 1.x)
       - name: Set up Julia (Latest) 🚀
         uses: julia-actions/setup-julia@v2
         with:
-          version: '1' 
+          version: '1'
 
       # ⚡ CACHE: Saves ~2 mins per run
       - name: Cache Julia artifacts 💾
         uses: julia-actions/cache@v2
 
-      # 📦 INSTANTIATE: The Bulletproof Version 🛡️
+      # 📦 INSTANTIATE: The "Bulletproof" Dependency Install 🛡️
+      # 1. Update Registry (Fixes "no registries" error)
+      # 2. Instantiate (Downloads packages)
+      # 3. Resolve (Fixes manifest mismatches)
+      # 4. Precompile (Optimizes start time)
       - name: Install Dependencies 📦
         run: |
           julia --project=. -e '
             using Pkg
-            
-            # 1. 📞 Get the "Phone Book" (Registry) FIRST
             Pkg.Registry.update()
-            
-            # 2. 🧱 Download packages & artifacts (Instantiate)
             Pkg.instantiate()
-            
-            # 3. 🔧 Fix any Manifest issues (Resolve)
             Pkg.resolve()
-            
-            # 4. 🚀 Compile
             Pkg.precompile()
-
+          '
 
       - name: Start Headless Chrome 🚀
         run: |
@@ -68,7 +64,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 1. Pull Latest History
+          # 1. Pull Latest History (Rebase avoids merge conflicts)
           git pull --rebase
           
           # 2. Append Data
