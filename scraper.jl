@@ -1,108 +1,132 @@
 using ChromeDevToolsLite
 using Dates
 
-# 🕒 Precise Time function
+# 🕒 Helper: Precise Time (IST)
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-println("🚀 Julia Scraper: Initializing Dynamic Header Protocol... 📋")
-
-try
-    page = ChromeDevToolsLite.connect_browser() 
-    println("✅ Chrome Connected.")
-
-    target_url = "https://chartink.com/dashboard/208896"
-    println("🧭 Navigating to dashboard...")
-    ChromeDevToolsLite.goto(page, target_url)
-
-    # ⏳ Wait for data to load
-    println("⏳ Waiting 20s for DOM stabilization...")
-    sleep(20)
-
-    println("⛏️ Extracting Data with Headers...")
-    
-    extract_js = """
-    (() => {
-        const tables = document.querySelectorAll("table");
-        if (tables.length === 0) return "NO DATA FOUND";
+# ⏳ Helper: Smart Waiting (The "Anti-Sleep" Hammer)
+# Polls every 1s to see if table exists. Much safer than sleep().
+function wait_for_selector(page, selector; timeout=30, poll_interval=1)
+    start_time = time()
+    while time() - start_time < timeout
+        # JS check: returns true if element exists
+        check_js = "document.querySelector('$selector') !== null"
+        result = ChromeDevToolsLite.evaluate(page, check_js)
         
-        let allRows = [];
+        # Handle the Dict return wrapper that CDTL sometimes uses
+        val = isa(result, Dict) ? result["value"] : result
+        
+        if val == true
+            return true
+        end
+        sleep(poll_interval)
+    end
+    throw(ErrorException("Timeout waiting for selector: $selector"))
+end
 
-        tables.forEach(table => {
-            let widgetName = "Unknown Widget";
+# 🚀 Main Execution Function
+function main()
+    @info "🚀 Julia Scraper: Initializing..."
+
+    page = nothing
+    try
+        # Connect to the Chrome instance launched by GitHub Actions
+        page = ChromeDevToolsLite.connect_browser() 
+        @info "✅ Chrome Connected."
+
+        target_url = "https://chartink.com/dashboard/208896"
+        ChromeDevToolsLite.goto(page, target_url)
+        @info "🧭 Navigated to dashboard."
+
+        # ⏳ SMART WAIT: Waits for tables to appear
+        @info "👀 Watching DOM for tables..."
+        wait_for_selector(page, "table.table") 
+        
+        # Small buffer for data population after the table structure appears
+        sleep(5) 
+
+        @info "⚡ DOM Ready. Extracting..."
+        
+        # 💉 The "Sibling Hunter" JS Logic
+        extract_js = """
+        (() => {
+            const tables = document.querySelectorAll("table");
+            if (tables.length === 0) return "NO DATA FOUND";
             
-            // 🏹 1. FIND WIDGET NAME (Sibling Hunter Logic)
-            let current = table;
-            let depth = 0;
-            while (current && depth < 6) {
-                let sibling = current.previousElementSibling;
-                let foundTitle = false;
-                for (let i = 0; i < 5; i++) {
-                    if (!sibling) break;
-                    let text = sibling.innerText.trim();
-                    if (text.length > 0 && !text.includes("Loading") && !text.includes("Error")) {
-                        widgetName = text.split('\\n')[0].trim();
-                        foundTitle = true;
-                        break;
-                    }
-                    sibling = sibling.previousElementSibling;
-                }
-                if (foundTitle) break;
-                current = current.parentElement;
-                depth++;
-            }
-            
-            // 🏹 2. EXTRACT ROWS (Headers + Data)
-            const rows = table.querySelectorAll("tr");
-            
-            const processedRows = Array.from(rows).map(row => {
-                const cells = row.querySelectorAll("th, td");
-                if (cells.length === 0) return null; 
+            let allRows = [];
 
-                // Check if this is a Header Row
-                const isHeader = row.querySelector("th") !== null;
-                const rowText = row.innerText;
-
-                // 🛡️ Filter Logic
-                // We keep headers now, but filter "No data" and "Clause" garbage
-                if (rowText.includes("No data for table") || rowText.includes("Clause")) return null;
-
-                const safeWidget = widgetName.replace(/"/g, '""');
-
-                const cellData = Array.from(cells).map(c => {
-                    let text = c.innerText.trim();
-                    
-                    // 🧼 HEADER CLEANING
-                    // Headers often contain "Symbol\\nSort by Symbol..."
-                    // We split by newline and take the first part to get just the name.
-                    if (isHeader) {
-                        text = text.split('\\n')[0].trim();
-                        // Backup cleanup if newline didn't work
-                        text = text.replace(/Sort table by/gi, "").trim();
-                    }
-                    
-                    text = text.replace(/"/g, '""'); 
-                    return '"' + text + '"';
-                }).join(",");
+            tables.forEach(table => {
+                let widgetName = "Unknown Widget";
                 
-                return '"' + safeWidget + '",' + cellData;
+                // 🏹 1. FIND WIDGET NAME (Sibling Hunter Logic)
+                let current = table;
+                let depth = 0;
+                while (current && depth < 6) {
+                    let sibling = current.previousElementSibling;
+                    let foundTitle = false;
+                    for (let i = 0; i < 5; i++) {
+                        if (!sibling) break;
+                        let text = sibling.innerText.trim();
+                        if (text.length > 0 && !text.includes("Loading") && !text.includes("Error")) {
+                            widgetName = text.split('\\n')[0].trim();
+                            foundTitle = true;
+                            break;
+                        }
+                        sibling = sibling.previousElementSibling;
+                    }
+                    if (foundTitle) break;
+                    current = current.parentElement;
+                    depth++;
+                }
+                
+                // 🏹 2. EXTRACT ROWS
+                const rows = table.querySelectorAll("tr");
+                const processedRows = Array.from(rows).map(row => {
+                    const cells = row.querySelectorAll("th, td");
+                    if (cells.length === 0) return null; 
+
+                    // Check if Header
+                    const isHeader = row.querySelector("th") !== null;
+                    const rowText = row.innerText;
+
+                    // 🛡️ Filter Logic
+                    if (rowText.includes("No data for table") || rowText.includes("Clause")) return null;
+
+                    const safeWidget = widgetName.replace(/"/g, '""');
+
+                    const cellData = Array.from(cells).map(c => {
+                        let text = c.innerText.trim();
+                        
+                        // 🧼 HEADER CLEANING
+                        if (isHeader) {
+                            text = text.split('\\n')[0].trim();
+                            text = text.replace(/Sort table by/gi, "").trim();
+                        }
+                        
+                        text = text.replace(/"/g, '""'); 
+                        return '"' + text + '"';
+                    }).join(",");
+                    
+                    return '"' + safeWidget + ""," + cellData;
+                });
+
+                allRows = allRows.concat(processedRows.filter(r => r));
             });
-
-            allRows = allRows.concat(processedRows.filter(r => r));
-        });
+            
+            return allRows.join("\\n");
+        })()
+        """
         
-        return allRows.join("\\n");
-    })()
-    """
-    
-    result = ChromeDevToolsLite.evaluate(page, extract_js)
-    data_string = isa(result, Dict) && haskey(result, "value") ? result["value"] : result
+        result = ChromeDevToolsLite.evaluate(page, extract_js)
+        data_string = isa(result, Dict) ? result["value"] : result
 
-    temp_file = "new_chunk.csv"
-    
-    if data_string == "NO DATA FOUND" || isempty(data_string)
-        println("⚠️ 0 Rows Found.")
-        exit(1)
-    else
+        if data_string == "NO DATA FOUND" || isempty(data_string)
+            @warn "⚠️ No data found in tables."
+            return
+        end
+
+        # 💾 Write to Chunk File
+        temp_file = "new_chunk.csv"
         rows = split(data_string, "\n")
         current_time = get_ist()
         
@@ -114,11 +138,15 @@ try
                     count += 1
                 end
             end
-            println("✅ Success! Captured $count rows (Headers included).")
+            @info "✅ Success! Captured $count rows."
         end
-    end
 
-catch e
-    println("💥 Error: $e")
-    rethrow(e)
+    catch e
+        @error "💥 Scraper Failed" exception=(e, catch_backtrace())
+        exit(1) # Fail the action so you get an email notification
+    end
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
 end
