@@ -12,13 +12,17 @@ end
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-# --- 🧠 JS Logic (The Dragnet) ---
-# This JS payload hunts for tables, specific titles, and handles non-standard grids.
+# --- 🧠 JS Logic (The Cleaner) ---
+# Includes strict newline removal to prevent CSV breakage
 const JS_PAYLOAD = """
 (() => {
     try {
         let output = [];
         
+        // ✨ CRITICAL FIX: Replace newlines inside cells with spaces
+        // This ensures one visual row = one line in our CSV string.
+        const clean = (txt) => txt ? txt.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
+
         // 1️⃣ STANDARD TABLE SCAN
         const nodes = document.querySelectorAll("table, div.dataTables_wrapper");
         
@@ -26,12 +30,11 @@ const JS_PAYLOAD = """
             let name = "Unknown Widget " + i;
             let curr = node, depth = 0;
             
-            // Climb up 12 levels to find the Title
+            // Climb 12 levels to find a title
             while (curr && depth++ < 12) {
                 let sib = curr.previousElementSibling;
                 while (sib) {
                     let txt = sib.innerText ? sib.innerText.trim() : "";
-                    // Filter out noise like "Loading..." or buttons
                     if (txt.length > 2 && txt.length < 150 && !/Loading|Error|Run Scan/.test(txt)) {
                         name = txt.split('\\n')[0].trim();
                         break;
@@ -42,7 +45,6 @@ const JS_PAYLOAD = """
                 curr = curr.parentElement;
             }
 
-            // Extract Rows (Handle standard tables and DataTables divs)
             let rows = (node.tagName === "TABLE") ? node.querySelectorAll("tr") : node.querySelectorAll("table tr");
             if (!rows.length) return;
 
@@ -53,19 +55,14 @@ const JS_PAYLOAD = """
                 const cells = Array.from(row.querySelectorAll("th, td"));
                 if (!cells.length) return;
 
-                // Escape quotes and join columns
-                let line = cells.map(c => {
-                    let t = c.innerText.trim().replace(/"/g, '""');
-                    return '"' + t + '"';
-                }).join(",");
-                
-                // Prefix with Widget Name
-                output.push('"' + name.replace(/"/g, '""') + '",' + line);
+                // Build CSV line
+                let line = Array.from(cells).map(c => '"' + clean(c.innerText) + '"').join(",");
+                output.push('"' + clean(name) + '",' + line);
             });
         });
 
         // 2️⃣ SPECIAL HUNTER: MARKET CONDITION / BREADTH
-        // Explicitly looks for headers like "Market Condition" if missed by scan
+        // Explicitly hunts for "Market Condition" style widgets
         const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6, div.card-header");
         headings.forEach(h => {
             let title = h.innerText.trim();
@@ -80,9 +77,8 @@ const JS_PAYLOAD = """
                         Array.from(rows).forEach(row => {
                              let cells = row.querySelectorAll("td, th");
                              if (cells.length > 0) {
-                                 let line = Array.from(cells).map(c => '"' + c.innerText.trim().replace(/"/g, '""') + '"').join(",");
-                                 // Add "MANUAL_CATCH" prefix to handle later
-                                 output.push('"MANUAL_CATCH_' + title.replace(/"/g, '""') + '",' + line);
+                                 let line = Array.from(cells).map(c => '"' + clean(c.innerText) + '"').join(",");
+                                 output.push('"MANUAL_CATCH_' + clean(title) + '",' + line);
                              }
                         });
                     }
@@ -90,7 +86,6 @@ const JS_PAYLOAD = """
             }
         });
 
-        // Deduplicate lines
         let uniqueOutput = [...new Set(output)];
         window._data = uniqueOutput.join("\\n");
         return "DONE";
@@ -109,15 +104,15 @@ function setup_page()
     page = ChromeDevToolsLite.connect_browser()
     ChromeDevToolsLite.goto(page, TARGET_URL)
     
-    @info "👀 Waiting for Tables to Render..."
-    # Robust wait loop (Max 60s)
+    @info "👀 Waiting for Tables..."
+    # Explicit Wait Loop (Max 60s)
     for _ in 1:60
         res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0") |> safe_unwrap
         if res == true; break; end
         sleep(1)
     end
 
-    @info "📜 Scrolling to Trigger Lazy Loading..."
+    @info "📜 Scrolling..."
     h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight") |> safe_unwrap
     h = isa(h, Number) ? h : 5000
     
@@ -125,22 +120,21 @@ function setup_page()
         ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)")
         sleep(0.3)
     end
-    sleep(3) # Final settling time
+    sleep(3)
     return page
 end
 
 function extract_data(page)
-    @info "⚡ Executing JS Payload..."
+    @info "⚡ Executing Extraction..."
     ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
     
     len = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0") |> safe_unwrap
     len = try parse(Int, string(len)) catch; 0 end
     
     @info "📦 Payload Size: $len chars"
-    if len == 0; error("No Data Found (Page might be blank)"); end
+    if len == 0; error("No Data Found"); end
     
     buf = IOBuffer()
-    # Chunked fetch to avoid socket limits
     for i in 0:50000:len
         chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))") |> safe_unwrap
         print(buf, chunk)
@@ -153,53 +147,64 @@ function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
     widgets = WidgetTable[]
     current_ts = get_ist()
     
-    lines = split(raw_csv, "\n")
+    # Pre-clean: Remove carriage returns
+    clean_raw = replace(raw_csv, "\r" => "")
+    lines = split(clean_raw, "\n")
+    
     groups = Dict{String, Vector{String}}()
     
-    # 1. Group raw lines by Widget Name
     for line in lines
-        length(line) < 5 && continue
+        if length(line) < 5 || !startswith(line, "\""); continue; end
         m = match(r"^\"([^\"]+)\"", line)
-        key = isnothing(m) ? "Unknown" : m.captures[1]
+        if isnothing(m); continue; end
         
-        # Merge manual catches
+        key = m.captures[1]
         key = replace(key, "MANUAL_CATCH_" => "")
-        
         push!(get!(groups, key, String[]), line)
     end
 
-    # 2. Process each group into a DataFrame
+    @info "🔍 Found $(length(groups)) potential widgets."
+
     for (name, rows) in groups
         clean_name = replace(name, r"[^a-zA-Z0-9]" => "_")
         if length(clean_name) > 50; clean_name = clean_name[1:50]; end
         
-        # 🔑 CRITICAL FIX: Header Detection
-        # Looks for "Symbol", "Name", "Scan Name", OR "Date" (for Mkt Condition)
+        # 🧠 HEADER LOGIC: Accepts 'Date' now
         header_idx = findfirst(l -> occursin(r"\",\"(Symbol|Name|Scan Name|Date)\"", l), rows)
-        
-        # Fallback if no header found
         if isnothing(header_idx); header_idx = 1; end
+        
+        # Calculate expected column count from header
+        header_line = rows[header_idx]
+        expected_cols = length(split(header_line, "\",\""))
         
         io = IOBuffer()
         
-        # Extract Clean Header (Remove the first "WidgetName" column)
+        # Write Header (Remove WidgetName col)
         raw_header = rows[header_idx]
         clean_header = replace(raw_header, r"^\"[^\"]+\"," => "")
         println(io, "\"Timestamp\"," * clean_header)
         
+        # Write Data
+        valid_count = 0
         for i in (header_idx+1):length(rows)
-            # Strip Widget Name column from data row
+            # Validation: Check column count consistency
+            curr_cols = length(split(rows[i], "\",\""))
+            if abs(curr_cols - expected_cols) > 2; continue; end
+
             clean_row = replace(rows[i], r"^\"[^\"]+\"," => "")
-            
-            # Filter Repeats (skip lines that look like headers)
+            # Filter repeated headers
             if !occursin(r"\"(Symbol|Name|Date)\"", clean_row)
                  println(io, "\"$current_ts\"," * clean_row)
+                 valid_count += 1
             end
         end
         
+        if valid_count == 0; continue; end
+
         seekstart(io)
         try
-            df = CSV.read(io, DataFrame)
+            # Relaxed parsing for maximum compatibility
+            df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
             if nrow(df) > 0
                 push!(widgets, WidgetTable(name, clean_name, df))
             end
@@ -216,15 +221,14 @@ function save_widget(w::WidgetTable)
     if isfile(path)
         try
             old_df = CSV.read(path, DataFrame)
-            # Merge Old + New
             final_df = vcat(old_df, w.data, cols=:union)
-            # Deduplicate (Timestamp + Symbol/Date)
-            unique!(final_df) 
-            # Sort by Time
+            # Dedupe logic: Timestamp + First meaningful column (Symbol or Date)
+            # We assume Col 2 (after Timestamp) is the key
+            key_col = names(final_df)[2] 
+            unique!(final_df, [:Timestamp, key_col])
             sort!(final_df, :Timestamp)
             CSV.write(path, final_df)
         catch
-            # If old file is corrupt, overwrite
             CSV.write(path, w.data)
         end
     else
@@ -248,12 +252,10 @@ function main()
             exit(0)
         end
 
-        # Broadcast save across all widgets
         widgets .|> save_widget
-        
-        @info "✅ Pipeline Success. ($(length(widgets)) widgets processed)"
+        @info "✅ Pipeline Success."
     catch e
-        @error "Pipeline Failed" exception=(e, catch_backtrace())
+        @error "Failed" exception=(e, catch_backtrace())
         exit(1)
     end
 end
