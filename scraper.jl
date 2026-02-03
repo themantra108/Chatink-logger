@@ -1,18 +1,18 @@
 using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 
 # ==============================================================================
-# 🧠 TYPE SYSTEM (The Julia Way)
+# 🧠 TYPE SYSTEM
 # ==============================================================================
 abstract type UpdateStrategy end
-struct SnapshotStrategy <: UpdateStrategy end   # For Stock Lists (Block Replace)
-struct TimeSeriesStrategy <: UpdateStrategy end # For Market Condition (Upsert)
+struct SnapshotStrategy <: UpdateStrategy end   # Symbol Lists: Block Replacement
+struct TimeSeriesStrategy <: UpdateStrategy end # Market Condition: Smart Upsert
 
 struct WidgetTable{T <: UpdateStrategy}
     name::String
     clean_name::String
     data::DataFrame
     subfolder::String
-    strategy::T  # The "Tag" that drives logic
+    strategy::T 
 end
 
 # ==============================================================================
@@ -33,7 +33,7 @@ const MONTH_MAP = Dict{SubString{String}, Int}(
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
 # ==============================================================================
-# 📅 PARSING LOGIC
+# 📅 PARSING & ENRICHMENT
 # ==============================================================================
 
 function parse_chartink_date(date_str::AbstractString)
@@ -54,7 +54,6 @@ function determine_strategy(df::DataFrame)
 end
 
 function enrich_dataframe!(df::DataFrame, strategy::TimeSeriesStrategy)
-    # Logic for Market Condition (Date inference)
     nrows = nrow(df)
     full_dates = Vector{Union{Date, Missing}}(missing, nrows)
     scrape_date = Date(get_ist())
@@ -85,79 +84,112 @@ function enrich_dataframe!(df::DataFrame, strategy::TimeSeriesStrategy)
 end
 
 function enrich_dataframe!(df::DataFrame, strategy::SnapshotStrategy)
-    # Logic for Stock Lists (Timestamp -> Scan_Date)
     if "Timestamp" in names(df)
         df[!, :Scan_Date] = Date.(df[!, :Timestamp])
     end
 end
 
 # ==============================================================================
-# 💾 SAVING LOGIC (Using Multiple Dispatch)
+# 💾 SMART SAVING LOGIC (Multiple Dispatch)
 # ==============================================================================
 
-# Common Saver Wrapper
 function save_to_disk(w::WidgetTable, final_df::DataFrame)
     folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
     mkpath(folder_path)
     path = joinpath(folder_path, w.clean_name * ".csv")
-    
-    # Always sort Newest -> Oldest before writing
     sort!(final_df, :Timestamp, rev=true)
     CSV.write(path, final_df)
-    @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name) ($(typeof(w.strategy)))"
+    @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name)"
 end
 
-# VERSION 1: The "Snapshot" Saver (For Stock Lists)
-# Logic: Delete old rows for the current Scan_Date, insert new ones.
+# STRATEGY 1: Snapshot (Symbol List) - Unchanged
 function save_widget(w::WidgetTable{SnapshotStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
-    
-    if !isfile(path)
-        save_to_disk(w, w.data)
-        return
-    end
+    if !isfile(path); save_to_disk(w, w.data); return; end
 
     old_df = CSV.read(path, DataFrame)
     
-    # Check for schema drift or missing columns in old file
-    if !("Scan_Date" in names(old_df))
-        # Hotfix for legacy files: If Scan_Date missing, just Append
-        final_df = vcat(w.data, old_df, cols=:union)
-    else
-        # The Snapshot Logic
+    if "Scan_Date" in names(w.data)
         active_dates = unique(dropmissing(w.data, :Scan_Date).Scan_Date)
-        
-        # In-place filtering (Memory efficient)
         filter!(row -> ismissing(row.Scan_Date) || !(row.Scan_Date in active_dates), old_df)
-        
-        final_df = vcat(w.data, old_df, cols=:union)
     end
     
+    final_df = vcat(w.data, old_df, cols=:union)
     save_to_disk(w, final_df)
 end
 
-# VERSION 2: The "Time Series" Saver (For Market Condition)
-# Logic: Upsert based on Date text (e.g., "2nd Feb").
+# STRATEGY 2: TimeSeries (Market Condition) - 🔥 SMART MERGE 🔥
 function save_widget(w::WidgetTable{TimeSeriesStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
-    
-    if !isfile(path)
-        save_to_disk(w, w.data)
-        return
-    end
+    if !isfile(path); save_to_disk(w, w.data); return; end
 
     old_df = CSV.read(path, DataFrame)
-    combined_df = vcat(old_df, w.data, cols=:union)
+    new_df = w.data
     
-    # Deduplication Key
-    dedupe_cols = "Date" in names(combined_df) ? [:Date] : Symbol[]
+    # 1. Identify Content Columns (Ignore Metadata)
+    # These are the columns we check to see if "Data Changed"
+    metadata_cols = ["Timestamp", "Full_Date", "Scan_Date"]
+    content_cols = filter(n -> !(n in metadata_cols), names(new_df))
     
-    # Sort first so 'unique!' keeps the newest
-    sort!(combined_df, :Timestamp, rev=true)
+    # 2. Filter New Data: Keep ONLY rows that are actually new/changed
+    # Logic: If NewRow.Date exists in OldDF AND Content is Identical -> Drop NewRow
     
-    if !isempty(dedupe_cols)
-        unique!(combined_df, dedupe_cols)
+    # Index old data for fast lookup: Date -> Row
+    old_map = Dict{String, DataFrameRow}()
+    for row in eachrow(old_df)
+        # Store the FIRST occurrence (Newest) for each date
+        d = string(row.Date)
+        if !haskey(old_map, d)
+            old_map[d] = row
+        end
     end
+    
+    rows_to_keep = Int[]
+    for i in 1:nrow(new_df)
+        new_row = new_df[i, :]
+        d_key = string(new_row.Date)
+        
+        if haskey(old_map, d_key)
+            old_row = old_map[d_key]
+            
+            # CHECK: Has content changed?
+            # We use isequal for safe comparison including Missing values
+            is_changed = false
+            for col in content_cols
+                if col in names(old_df)
+                    val_new = new_row[col]
+                    val_old = old_row[col]
+                    if !isequal(val_new, val_old)
+                        is_changed = true
+                        break
+                    end
+                else
+                    # New column appeared -> Definitely changed
+                    is_changed = true; break;
+                end
+            end
+            
+            if is_changed
+                # Data changed! Keep New Row (It will replace old one in step 3)
+                push!(rows_to_keep, i)
+            else
+                # Data exact same! Drop New Row (Old row preserves original timestamp)
+                # We do NOT push to rows_to_keep
+            end
+        else
+            # New Date entirely! Keep it.
+            push!(rows_to_keep, i)
+        end
+    end
+    
+    # 3. Combine Old History + ONLY The "Fresh" Updates
+    actual_updates = new_df[rows_to_keep, :]
+    combined_df = vcat(actual_updates, old_df, cols=:union)
+    
+    # 4. Standard Dedupe (Clean up the overlaps if update happened)
+    # If we kept a New Row, we now have [New, Old]. We sort Newest first and unique! removes Old.
+    sort!(combined_df, :Timestamp, rev=true)
+    unique!(combined_df, :Date)
     
     save_to_disk(w, combined_df)
 end
@@ -200,7 +232,6 @@ const JS_PAYLOAD = """
             });
         });
 
-        // Special Headers (Market Condition)
         const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6, div.card-header");
         headings.forEach(h => {
             let title = h.innerText.trim();
@@ -271,11 +302,8 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
             seekstart(io)
             try
                 df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
-                
-                # 🧠 JULIA WAY: Determine Strategy & Enrich
                 strat = determine_strategy(df)
                 enrich_dataframe!(df, strat)
-                
                 push!(widgets, WidgetTable(name, clean_name, df, folder_name, strat))
             catch; end
         end
@@ -285,10 +313,10 @@ end
 
 function get_dashboard_name(page)
     raw_title = ChromeDevToolsLite.evaluate(page, "document.title") 
-    raw_title = isa(raw_title, Dict) ? raw_title["value"] : raw_title
-    if isnothing(raw_title) || raw_title == ""; return "Unknown_Dashboard"; end
+    val = isa(raw_title, Dict) ? raw_title["value"] : raw_title
+    if isnothing(val) || val == ""; return "Unknown_Dashboard"; end
     
-    clean_title = replace(raw_title, " - Chartink.com" => "") |> 
+    clean_title = replace(val, " - Chartink.com" => "") |> 
                   x -> replace(x, " - Chartink" => "") |>
                   x -> replace(x, r"[^a-zA-Z0-9 \-_]" => "") |> 
                   x -> replace(strip(x), " " => "_")
@@ -306,7 +334,6 @@ function process_dashboard(page, url)
     folder_name = get_dashboard_name(page)
     @info "🏷️ Identified Dashboard: $folder_name"
     
-    # Wait for tables
     for i in 1:60
         res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0")
         val = isa(res, Dict) ? res["value"] : res
