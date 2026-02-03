@@ -4,23 +4,32 @@ using Dates
 # 🕒 Helper: Precise Time (IST)
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
+# 🛡️ Helper: Safe Unwrap (The Universal Fix)
+# Extracts the actual value regardless of how Chrome wraps it
+function safe_unwrap(result)
+    if isa(result, Dict)
+        if haskey(result, "value")
+            return result["value"]
+        elseif haskey(result, "result")
+            inner = result["result"]
+            if isa(inner, Dict) && haskey(inner, "value")
+                return inner["value"]
+            end
+        end
+        # Fallback: If we can't find 'value', returns the whole dict for debugging
+        return result
+    end
+    return result
+end
+
 # ⏳ Helper: Smart Waiting
-# REVERTED: Removed the 'returnByValue' arg that caused the crash.
 function wait_for_selector(page, selector; timeout=60, poll_interval=1)
     start_time = time()
     while time() - start_time < timeout
         check_js = "document.querySelector('$selector') !== null"
         result = ChromeDevToolsLite.evaluate(page, check_js)
         
-        # Simple boolean unwrap
-        val = false
-        if isa(result, Dict) && haskey(result, "value")
-             val = result["value"]
-        elseif isa(result, Dict) && haskey(result, "result")
-             val = get(result["result"], "value", false)
-        else
-             val = result
-        end
+        val = safe_unwrap(result)
         
         if val == true
             return true
@@ -50,14 +59,13 @@ function main()
 
         @info "⚡ DOM Ready. Running Scraper Logic..."
         
-        # 1️⃣ EXECUTE SCRAPER (But don't return data yet!)
-        # We save the result to 'window._chartinkData'
+        # 1️⃣ EXECUTE SCRAPER (Save to window._chartinkData)
         setup_js = """
         (() => {
             const tables = document.querySelectorAll("table");
             if (tables.length === 0) {
                 window._chartinkData = "NO DATA FOUND";
-                return;
+                return "NODATA";
             }
             
             let allRows = [];
@@ -106,7 +114,6 @@ function main()
                 allRows = allRows.concat(processedRows.filter(r => r));
             });
             
-            // SAVE TO GLOBAL VARIABLE
             window._chartinkData = allRows.join("\\n");
             return "DONE";
         })()
@@ -114,16 +121,28 @@ function main()
         ChromeDevToolsLite.evaluate(page, setup_js)
         
         # 2️⃣ FETCH DATA IN CHUNKS
-        # We pull 50,000 chars at a time to avoid the "Object Reference" error
         @info "📦 Fetching data chunks..."
         
-        # Get total length
+        # 🛡️ THE FIX IS HERE: Safe Unwrap on Length Check
         len_res = ChromeDevToolsLite.evaluate(page, "window._chartinkData.length")
-        total_len = isa(len_res, Dict) ? len_res["value"] : len_res
+        total_len = safe_unwrap(len_res)
         
-        if total_len == 0 || total_len == "NO DATA FOUND"
+        @info "📊 Total Data Length: $total_len characters"
+
+        # Sanity Checks
+        if total_len == "NO DATA FOUND" || total_len == "NODATA"
              @warn "⚠️ No data found."
              return
+        end
+        
+        if !isa(total_len, Int)
+            # Try parsing if it came back as a string
+            try
+                total_len = parse(Int, string(total_len))
+            catch
+                @warn "⚠️ Could not determine length. Got: $total_len"
+                return
+            end
         end
 
         full_data = ""
@@ -131,27 +150,17 @@ function main()
         current_idx = 0
         
         while current_idx < total_len
-            # JS: slice the string
             end_idx = min(current_idx + chunk_size, total_len)
             chunk_js = "window._chartinkData.substring($current_idx, $end_idx)"
             
             chunk_res = ChromeDevToolsLite.evaluate(page, chunk_js)
+            chunk_val = safe_unwrap(chunk_res)
             
-            # Unwrap
-            chunk_val = ""
-            if isa(chunk_res, Dict)
-                 chunk_val = chunk_res["value"]
-            elseif isa(chunk_res, Dict) && haskey(chunk_res, "result")
-                 chunk_val = get(chunk_res["result"], "value", "")
-            else
-                 chunk_val = chunk_res
-            end
-            
-            full_data = full_data * chunk_val
+            full_data = full_data * string(chunk_val)
             current_idx += chunk_size
         end
 
-        if isempty(full_data) || full_data == "NO DATA FOUND"
+        if isempty(full_data)
              @warn "⚠️ Data was empty after chunking."
              return
         end
