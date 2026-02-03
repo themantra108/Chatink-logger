@@ -46,21 +46,25 @@ jobs:
       - name: Run Scraper 🕸️
         run: julia --project=. scraper.jl
 
-      - name: Commit and Push Data 💾
+       - name: Commit and Push Data 💾
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          git pull --rebase
-          
-          # Check if data folder exists
+          # 1. Check & Commit FIRST (Locks the data safely)
           if [ -d "chartink_data" ]; then
-             # Add the ENTIRE folder
              git add chartink_data/
-             
              timestamp=$(date -u)
+             # Commit locally. If nothing changed, this is harmless.
              git commit -m "📈 Data Update: ${timestamp}" || echo "No changes to commit"
-             git push
           else
              echo "⚠️ No data folder generated."
+             exit 0 # Exit gracefully
           fi
+          
+          # 2. Pull Latest Changes (Rebase applies our commit ON TOP of remote)
+          # Since we committed, the "unstaged changes" error is gone.
+          git pull --rebase
+          
+          # 3. Push to GitHub
+          git push
