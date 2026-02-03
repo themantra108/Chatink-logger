@@ -11,10 +11,86 @@ struct WidgetTable
     name::String
     clean_name::String
     data::DataFrame
-    subfolder::String # 🆕 Dynamically assigned from Page Title
+    subfolder::String 
 end
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
+
+# --- 📅 Date Logic: The Year Inferencer ---
+const MONTH_MAP = Dict(
+    "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4, "May" => 5, "Jun" => 6,
+    "Jul" => 7, "Aug" => 8, "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12
+)
+
+function parse_chartink_date(date_str::String)
+    # Handle "3rd Feb", "1st Jan", "12th Dec"
+    m = match(r"(\d+)(?:st|nd|rd|th)?\s+([a-zA-Z]+)", date_str)
+    if isnothing(m)
+        return (0, 0) # Failed parse
+    end
+    day = parse(Int, m.captures[1])
+    mon_str = m.captures[2]
+    mon = get(MONTH_MAP, titlecase(mon_str)[1:3], 0)
+    return (day, mon)
+end
+
+function add_full_date_column!(df::DataFrame)
+    # Check if "Date" column exists
+    if !("Date" in names(df))
+        return # Skip if this widget has no Date column
+    end
+
+    # Create vectors for the new column
+    full_dates = Vector{Union{Date, Missing}}(missing, nrow(df))
+    
+    # Year Inference Logic
+    # Assumption: Data is sorted Descending (Newest First)
+    current_year = year(get_ist()) 
+    last_month = 0
+    
+    # We iterate 1 to N. Since it's LIFO (Newest First), 
+    # we expect months to go 2 -> 1 -> 12 -> 11...
+    for i in 1:nrow(df)
+        raw_val = string(df[i, "Date"])
+        (day, mon) = parse_chartink_date(raw_val)
+        
+        if day == 0 || mon == 0
+            continue 
+        end
+        
+        # Initialize last_month on first valid row
+        if last_month == 0
+            last_month = mon
+            # Edge case: If we are in Jan 2026, but the first data row is Dec,
+            # it implies the data is from late 2025.
+            # But usually, the first row is "Today" or "Yesterday".
+            # We assume first row is current year unless explicitly impossible (future).
+        end
+        
+        # DETECT YEAR BOUNDARY
+        # If we jump from Jan (1) to Dec (12), we went back a year.
+        # Logic: If current month (e.g., 12) is drastically larger than prev row month (e.g., 1)
+        if mon > (last_month + 6) 
+            current_year -= 1
+        # Inverse Check (Just in case data is Ascending/Oldest First):
+        # If we jump from Dec (12) to Jan (1), we went forward a year.
+        elseif mon < (last_month - 6)
+            current_year += 1
+        end
+        
+        try
+            full_dates[i] = Date(current_year, mon, day)
+        catch
+            # Handle Feb 29 on non-leap years if inference is wrong
+            full_dates[i] = missing 
+        end
+        
+        last_month = mon
+    end
+    
+    # Append the new column
+    df[!, :Full_Date] = full_dates
+end
 
 # --- 🧠 JS Logic ---
 const JS_PAYLOAD = """
@@ -137,6 +213,10 @@ function parse_widgets(raw_csv::String, folder_name::String) :: Vector{WidgetTab
             seekstart(io)
             try
                 df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
+                
+                # 📅 APPLY DATE LOGIC HERE
+                add_full_date_column!(df)
+                
                 push!(widgets, WidgetTable(name, clean_name, df, folder_name))
             catch; end
         end
@@ -152,11 +232,16 @@ function save_widget(w::WidgetTable)
     try
         if isfile(path)
             old_df = CSV.read(path, DataFrame)
+            # Union handles the new "Full_Date" column automatically
             final_df = vcat(old_df, w.data, cols=:union)
             unique!(final_df, [names(final_df)[1], names(final_df)[2]])
-            sort!(final_df, :Timestamp)
+            
+            # Sort: Newest Scan First
+            sort!(final_df, :Timestamp, rev=true)
+            
             CSV.write(path, final_df)
         else
+            sort!(w.data, :Timestamp, rev=true)
             CSV.write(path, w.data)
         end
         @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name)"
@@ -167,18 +252,13 @@ function save_widget(w::WidgetTable)
 end
 
 function get_dashboard_name(page)
-    # 🆕 Extract Title from Browser
     raw_title = ChromeDevToolsLite.evaluate(page, "document.title") |> safe_unwrap
     if isnothing(raw_title) || raw_title == ""; return "Unknown_Dashboard"; end
     
-    # Clean: "Atlas - Chartink.com" -> "Atlas"
     clean_title = replace(raw_title, " - Chartink.com" => "")
     clean_title = replace(clean_title, " - Chartink" => "")
-    
-    # Sanitize for File System (remove : / \ etc)
     fs_safe_name = replace(clean_title, r"[^a-zA-Z0-9 \-_]" => "")
     fs_safe_name = replace(strip(fs_safe_name), " " => "_")
-    
     return isempty(fs_safe_name) ? "Dashboard_Unknown" : fs_safe_name
 end
 
@@ -194,9 +274,7 @@ function process_dashboard(page, url)
         return WidgetTable[]
     end
     
-    sleep(5) # Network Settle
-    
-    # 🆕 Determine Folder Name dynamically
+    sleep(5) 
     folder_name = get_dashboard_name(page)
     @info "🏷️ Identified Dashboard: $folder_name"
     
@@ -232,7 +310,6 @@ function process_dashboard(page, url)
         print(buf, chunk)
     end
     
-    # Pass the dynamic folder name
     return parse_widgets(String(take!(buf)), folder_name)
 end
 
