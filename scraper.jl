@@ -1,10 +1,9 @@
 using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 
 # --- 🧱 Configuration ---
-# Now a Vector of URLs instead of a single string
 const TARGET_URLS = [
-    "https://chartink.com/dashboard/208896",
-    "https://chartink.com/dashboard/419640"
+    # "https://chartink.com/dashboard/208896",  # 🛑 Commented out to focus on the 2nd URL
+    "https://chartink.com/dashboard/419640"     # 🎯 The Target
 ]
 const OUTPUT_DIR = "chartink_data"
 
@@ -16,7 +15,7 @@ end
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-# --- 🧠 JS Logic (Header Cleaner + Strict Newlines) ---
+# --- 🧠 JS Logic (Deep Scan + Header Cleaner) ---
 const JS_PAYLOAD = """
 (() => {
     try {
@@ -60,11 +59,12 @@ const JS_PAYLOAD = """
             });
         });
 
-        // 2️⃣ SPECIAL HUNTER (Breadth/Condition)
+        // 2️⃣ SPECIAL HUNTER (Breadth/Condition/Ratio)
         const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6, div.card-header");
         headings.forEach(h => {
             let title = h.innerText.trim();
-            if (/Market|Condition|Breadth|Ratio/i.test(title)) {
+            // Expanded keywords to catch more widgets
+            if (/Market|Condition|Breadth|Ratio|Indicator|Scan/i.test(title)) {
                 let container = h.nextElementSibling;
                 if (!container && h.parentElement) container = h.parentElement.nextElementSibling;
                 if (container) {
@@ -93,48 +93,6 @@ const JS_PAYLOAD = """
 
 function safe_unwrap(res)
     isa(res, Dict) ? (haskey(res,"value") ? res["value"] : (haskey(res,"result") ? safe_unwrap(res["result"]) : res)) : res
-end
-
-# Modified to accept a URL argument
-function process_dashboard(page, url)
-    @info "🧭 Navigating to: $url"
-    ChromeDevToolsLite.goto(page, url)
-    
-    # Wait for tables
-    for _ in 1:60
-        res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0") |> safe_unwrap
-        if res == true; break; end
-        sleep(1)
-    end
-
-    @info "📜 Scrolling..."
-    h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight") |> safe_unwrap
-    h = isa(h, Number) ? h : 5000
-    for s in 0:1000:h
-        ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)")
-        sleep(0.3)
-    end
-    sleep(3)
-    
-    # Extract
-    @info "⚡ Extracting..."
-    ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
-    
-    len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0") |> safe_unwrap
-    len = try parse(Int, string(len_res)) catch; 0 end
-    
-    if len == 0
-        @warn "No data found on $url"
-        return WidgetTable[]
-    end
-    
-    buf = IOBuffer()
-    for i in 0:50000:len
-        chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))") |> safe_unwrap
-        print(buf, chunk)
-    end
-    
-    return parse_widgets(String(take!(buf)))
 end
 
 function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
@@ -171,8 +129,11 @@ function parse_widgets(raw_csv::String) :: Vector{WidgetTable}
         
         valid_count = 0
         for i in start_row:length(rows)
+            # Relaxed column check (allow +/- 2 variance for messy footers)
             if abs(length(split(rows[i], "\",\"")) - expected_cols) > 2; continue; end
+            
             clean_row = replace(rows[i], r"^\"[^\"]+\"," => "")
+            # Skip rows that look like headers re-appearing
             if !occursin(r"\"(Symbol|Name|Date)\"", clean_row)
                  println(io, "\"$current_ts\"," * clean_row)
                  valid_count += 1
@@ -209,30 +170,82 @@ function save_widget(w::WidgetTable)
     end
 end
 
+function process_dashboard(page, url)
+    @info "🧭 Navigating to: $url"
+    
+    # 1. Clear previous state (Critical for Multi-URL)
+    ChromeDevToolsLite.evaluate(page, "window._data = null;")
+    
+    ChromeDevToolsLite.goto(page, url)
+    
+    # 2. Wait for network settle
+    sleep(5)
+    
+    # 3. Wait for Tables
+    for i in 1:60
+        res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0") |> safe_unwrap
+        if res == true; break; end
+        sleep(1)
+        if i % 10 == 0; @info "   ...still waiting for tables..."; end
+    end
+
+    # 4. Deep Scroll
+    @info "📜 Scrolling..."
+    h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight") |> safe_unwrap
+    h = isa(h, Number) ? h : 5000
+    for s in 0:1000:h
+        ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)")
+        sleep(0.3)
+    end
+    sleep(3) 
+    
+    # 5. Extract
+    @info "⚡ Extracting..."
+    ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
+    
+    len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0") |> safe_unwrap
+    len = try parse(Int, string(len_res)) catch; 0 end
+    
+    if len == 0
+        @warn "⚠️ No data found on $url. (Check if dashboard is empty)"
+        return WidgetTable[]
+    end
+    
+    buf = IOBuffer()
+    for i in 0:50000:len
+        chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))") |> safe_unwrap
+        print(buf, chunk)
+    end
+    
+    return parse_widgets(String(take!(buf)))
+end
+
 function main()
     mkpath(OUTPUT_DIR)
     
     try
-        @info "🔌 Connecting to Browser..."
+        @info "🔌 Connecting to Chrome..."
         page = ChromeDevToolsLite.connect_browser()
         
-        # 🔄 Loop through all Target URLs
         for url in TARGET_URLS
-            @info "--- Processing Dashboard: $url ---"
-            widgets = process_dashboard(page, url)
-            
-            if !isempty(widgets)
-                widgets .|> save_widget
-                @info "✅ Dashboard Complete."
-            else
-                @warn "⚠️ No widgets found on $url"
+            try
+                @info "--- [TARGET] $url ---"
+                widgets = process_dashboard(page, url)
+                
+                if !isempty(widgets)
+                    widgets .|> save_widget
+                    @info "✅ Success: $(length(widgets)) widgets saved."
+                end
+                
+            catch e
+                @error "❌ Failed to process $url" exception=(e, catch_backtrace())
             end
         end
         
-        @info "🎉 All Dashboards Scraped Successfully."
+        @info "🎉 Scrape Cycle Complete."
         
     catch e
-        @error "Critical Failure" exception=(e, catch_backtrace())
+        @error "Browser Connection Crash" exception=(e, catch_backtrace())
         exit(1)
     end
 end
