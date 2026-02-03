@@ -1,13 +1,11 @@
 name: Chartink Scraper (Every 5 Mins) 📈
 
 on:
-  workflow_dispatch:      # Allows manual trigger button
+  workflow_dispatch:
   schedule:
-    # 🕒 Run every 5 mins during Indian Market Hours (09:15 - 15:30 IST)
-    # UTC: 03:45 to 10:00 (approx)
+    # 🕒 9:15 AM to 3:30 PM IST (approx)
     - cron: '*/5 3-11 * * 1-5'
 
-# 🔐 Permission to write the CSV back to the repo
 permissions:
   contents: write
 
@@ -30,48 +28,29 @@ jobs:
 
       - name: Start Headless Chrome 🚀
         run: |
-          # 🎭 DISGUISE MODE: Added User-Agent and Window-Size to look like a real PC
+          # The "Disguise" flags are critical for Chartink
           google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" &
           
-          # Smart Wait: Loop until Chrome is ready
-          echo "Waiting for Chrome to launch..."
+          # Wait loop
+          echo "Waiting for Chrome..."
           for i in {1..30}; do
             if curl -s http://127.0.0.1:9222/json/version > /dev/null; then
-              echo "✅ Chrome is up and connected!"
+              echo "✅ Chrome is ready!"
               exit 0
             fi
             sleep 1
           done
-          echo "❌ Chrome failed to start."
           exit 1
 
       - name: Run Scraper 🕸️
         run: julia --project=. scraper.jl
 
-      # 🐞 DEBUG STEP: If scraper fails/finds 0 rows, upload the HTML so you can see why
-      - name: Upload Diagnostic Evidence 🕵️‍♂️
-        if: always() 
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-evidence
-          path: |
-            debug_page.html
-            debug_screenshot.png
-
-
-      - name: Commit and Push History 💾
+      - name: Commit and Push 💾
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Pull first to avoid conflicts
           git pull --rebase
-          
-          # Add the history CSV
           git add chartink_history.csv
-          
-          # Commit only if there is new data
           timestamp=$(date -u)
-          git commit -m "📈 Market Data: ${timestamp}" || echo "No changes to commit"
-          
+          git commit -m "📈 Data: ${timestamp}" || echo "No changes"
           git push
