@@ -4,18 +4,17 @@ using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 # 1. 🧱 CONFIGURATION & CONSTANTS
 # ==============================================================================
 const TARGET_URLS = [
-    "https://chartink.com/dashboard/208896",  # Stocks/Sectors
-    "https://chartink.com/dashboard/419640"   # Market Condition
+    "https://chartink.com/dashboard/208896",
+    "https://chartink.com/dashboard/419640"
 ]
 const OUTPUT_ROOT = "chartink_data"
 
-# Navigation Safety Settings
-const NAV_SLEEP_SEC = 5
+# Increased Safety Settings
+const NAV_SLEEP_SEC = 8          # Increased from 5 to 8 for stability
 const MAX_WAIT_CYCLES = 60
-const SCROLL_STEP = 2500
-const SCROLL_SLEEP = 0.1
+const SCROLL_STEP = 2000         # Smaller steps for better rendering
+const SCROLL_SLEEP = 0.2         # Slower scroll
 
-# Regex & Map (Pre-compiled for speed)
 const DATE_REGEX = r"(\d+)(?:st|nd|rd|th)?\s+([a-zA-Z]+)"
 const MONTH_MAP = Dict{SubString{String}, Int}(
     "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4, "May" => 5, "Jun" => 6,
@@ -25,20 +24,10 @@ const MONTH_MAP = Dict{SubString{String}, Int}(
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
 # ==============================================================================
-# 2. 🧠 TYPE SYSTEM & STRATEGIES
+# 2. 🧠 TYPE SYSTEM
 # ==============================================================================
 abstract type UpdateStrategy end
-
-"""
-SnapshotStrategy: For lists that change completely (e.g., "Top Gainers").
-Logic: Replaces/Merges rows for the current scan date.
-"""
 struct SnapshotStrategy <: UpdateStrategy end
-
-"""
-TimeSeriesStrategy: For history tracking (e.g., "Market Breadth").
-Logic: Smart Upsert. Only adds a new row if the data values have changed.
-"""
 struct TimeSeriesStrategy <: UpdateStrategy end
 
 struct WidgetTable{T <: UpdateStrategy}
@@ -65,35 +54,23 @@ function determine_strategy(df::DataFrame)
     return "Date" in names(df) ? TimeSeriesStrategy() : SnapshotStrategy()
 end
 
-# Enrichment: Time Series (Robust Year Inference)
 function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
     nrows = nrow(df)
     full_dates = Vector{Union{Date, Missing}}(missing, nrows)
     scrape_date = Date(get_ist())
     current_year = year(scrape_date)
     last_month = month(scrape_date) 
-    
     date_col = df.Date
     
     @inbounds for i in 1:nrows
         raw_val = string(date_col[i])
         (day, mon) = parse_chartink_date(raw_val)
         if day == 0 || mon == 0; continue; end
-        
-        # Year Rollback Logic (Detect Jan -> Dec transition)
-        if last_month < 3 && mon > 10
-            current_year -= 1
-        elseif last_month > 10 && mon < 3
-            current_year += 1 
-        end
-        
+        if last_month < 3 && mon > 10; current_year -= 1;
+        elseif last_month > 10 && mon < 3; current_year += 1; end
         try
             cand = Date(current_year, mon, day)
-            # Future Guard: If inferred date is > 2 days in future, rollback year
-            if cand > (scrape_date + Day(2))
-                 cand = Date(current_year - 1, mon, day)
-                 current_year -= 1
-            end
+            if cand > (scrape_date + Day(2)); cand = Date(current_year - 1, mon, day); current_year -= 1; end
             full_dates[i] = cand
         catch; end
         last_month = mon
@@ -101,59 +78,44 @@ function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
     df[!, :Full_Date] = full_dates
 end
 
-# Enrichment: Snapshot (Scan_Date creation)
 function enrich_dataframe!(df::DataFrame, ::SnapshotStrategy)
-    if "Timestamp" in names(df)
-        df[!, :Scan_Date] = Date.(df[!, :Timestamp])
-    end
+    if "Timestamp" in names(df); df[!, :Scan_Date] = Date.(df[!, :Timestamp]); end
 end
 
-# 🔥 JUNK FILTER
 function is_junk_widget(df::DataFrame)
     if nrow(df) == 0; return true; end
-    cols = names(df)
-    if "Col_1" in cols || "Col_2" in cols
-        first_row_str = join(string.(values(df[1, :])), " ")
-        if occursin("Clause", first_row_str) || occursin("*", first_row_str)
-            return true
-        end
+    if "Col_1" in names(df)
+        val = string(df[1,1])
+        return occursin("Clause", val) || occursin("*", val)
     end
     return false
 end
 
 # ==============================================================================
-# 4. 💾 SAVING LOGIC (Manual & Robust)
+# 4. 💾 SAVING LOGIC
 # ==============================================================================
 
 function save_to_disk(w::WidgetTable, final_df::DataFrame)
     folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
     mkpath(folder_path)
     path = joinpath(folder_path, w.clean_name * ".csv")
-    
     sort!(final_df, :Timestamp, rev=true)
     CSV.write(path, final_df)
     @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name)"
 end
 
-# --- Snapshot Logic (Block Filter) ---
 function save_widget(w::WidgetTable{SnapshotStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
     if !isfile(path); save_to_disk(w, w.data); return; end
 
     old_df = CSV.read(path, DataFrame)
-    
     if "Scan_Date" in names(w.data)
-        # Identify dates present in the NEW batch
         active_dates = unique(dropmissing(w.data, :Scan_Date).Scan_Date)
-        # Delete stale history for these dates
         filter!(row -> ismissing(row.Scan_Date) || !(row.Scan_Date in active_dates), old_df)
     end
-    
-    # Merge Cleaned History + New Batch
     save_to_disk(w, vcat(w.data, old_df, cols=:union))
 end
 
-# Helper: Row Diff
 function has_row_changed(new_row, old_row, check_cols)
     for col in check_cols
         val_new = hasproperty(new_row, col) ? new_row[col] : missing
@@ -163,47 +125,39 @@ function has_row_changed(new_row, old_row, check_cols)
     return false
 end
 
-# --- Time Series Logic (Smart Upsert) ---
 function save_widget(w::WidgetTable{TimeSeriesStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
     if !isfile(path); save_to_disk(w, w.data); return; end
 
     old_df = CSV.read(path, DataFrame)
     new_df = w.data
-    
     meta_cols = ["Timestamp", "Full_Date", "Scan_Date"]
     content_cols = filter(n -> !(n in meta_cols), names(new_df))
     
-    # Index History
     old_map = Dict{String, DataFrameRow}()
     for row in eachrow(old_df)
         d = string(row.Date)
         if !haskey(old_map, d); old_map[d] = row; end
     end
     
-    # Diffing Loop
     rows_to_keep = Int[]
     for i in 1:nrow(new_df)
         new_row = new_df[i, :]
         d_key = string(new_row.Date)
-        
-        # Keep if Date is new OR Content changed
         if !haskey(old_map, d_key) || has_row_changed(new_row, old_map[d_key], content_cols)
             push!(rows_to_keep, i)
         end
     end
     
-    if isempty(rows_to_keep); return; end # Skip write if no changes
-    
+    if isempty(rows_to_keep); return; end
     combined = vcat(new_df[rows_to_keep, :], old_df, cols=:union)
     sort!(combined, :Timestamp, rev=true)
     unique!(combined, :Date)
-    
     save_to_disk(w, combined)
 end
 
 # ==============================================================================
-# 5. 🌐 BROWSER INTERACTION
+# 5. 🌐 BROWSER INTERACTION (Robust Payload)
 # ==============================================================================
 
 function wait_for_tables(page)
@@ -224,28 +178,24 @@ function scroll_page(page)
         ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)")
         sleep(SCROLL_SLEEP)
     end
-    sleep(2)
+    sleep(3)
 end
 
-# 🔥 UPDATED PAYLOAD: Includes H5/H6 support
+# 🔥 THE PROVEN PAYLOAD (Includes H5, H6, Card Headers)
 const JS_PAYLOAD = """
 (() => {
     try {
         let out = [];
         const cln = (t) => t ? t.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
-        
         const cleanHeader = (txt) => {
             if (!txt) return "";
-            return txt.replace(/Sort table by[\\s\\S]*/i, "")
-                      .replace(/\\n/g, " ")
-                      .replace(/\\s+/g, " ")
-                      .trim();
+            return txt.replace(/Sort table by[\\s\\S]*/i, "").replace(/\\n/g, " ").replace(/\\s+/g, " ").trim();
         };
         
         const scan = (nodes, forcedName) => {
             nodes.forEach((n, i) => {
                 let name = forcedName;
-                if (!name) { // Auto-climb
+                if (!name) {
                     let curr = n, d = 0;
                     while (curr && d++ < 12) {
                         let sib = curr.previousElementSibling;
@@ -268,25 +218,24 @@ const JS_PAYLOAD = """
                     if (r.innerText.includes("No data")) return;
                     const cells = Array.from(r.querySelectorAll("th, td"));
                     if (!cells.length) return;
-                    
                     const isHead = r.querySelector("th") !== null;
                     const line = cells.map(c => {
                         let val = isHead ? cleanHeader(c.innerText) : cln(c.innerText);
                         return '"' + val + '"';
                     }).join(",");
-                    
                     out.push('"' + cln(name) + '",' + line);
                 });
             });
         };
 
-        // 1. Tables
+        // 1. Standard Tables
         document.querySelectorAll("table, div.dataTables_wrapper").forEach(n => {
             if (n.tagName === "TABLE") scan([n]);
         });
         
-        // 2. Cards (EXPANDED SELECTORS: H5, H6)
+        // 2. Card Scanner (CRITICAL FIX FOR DASHBOARD 2)
         document.querySelectorAll("div.card").forEach(c => {
+            // Expanded header search to include H5 and H6
             const h = c.querySelector(".card-header, h1, h2, h3, h4, h5, h6");
             const t = c.querySelector("table");
             if (h && t) scan([t], "MANUAL_CATCH_" + cln(h.innerText));
@@ -306,7 +255,7 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
     len_val = isa(len_res, Dict) ? len_res["value"] : len_res
     len = try parse(Int, string(len_val)) catch; 0 end
     
-    @info "  📊 JS found $(len) bytes." # DEBUG LOG
+    @info "  📊 JS found $(len) bytes."
     if len == 0; return WidgetTable[]; end
     
     buf = IOBuffer()
@@ -360,7 +309,6 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
             try
                 df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
                 if is_junk_widget(df); continue; end
-                
                 strat = determine_strategy(df)
                 enrich_dataframe!(df, strat)
                 push!(widgets, WidgetTable(name, clean_name, df, folder_name, strat))
