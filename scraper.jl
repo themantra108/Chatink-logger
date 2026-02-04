@@ -91,7 +91,7 @@ function is_junk_widget(df::DataFrame)
 end
 
 # ==============================================================================
-# 4. 💾 SAVING LOGIC
+# 4. 💾 SAVING LOGIC (Anti-Join)
 # ==============================================================================
 
 function save_to_disk(w::WidgetTable, final_df::DataFrame)
@@ -114,37 +114,24 @@ function save_widget(w::WidgetTable{SnapshotStrategy})
     save_to_disk(w, vcat(w.data, old_df, cols=:union))
 end
 
-function has_row_changed(new_row, old_row, check_cols)
-    for col in check_cols
-        val_new = hasproperty(new_row, col) ? new_row[col] : missing
-        val_old = hasproperty(old_row, col) ? old_row[col] : missing
-        if !isequal(val_new, val_old); return true; end
-    end
-    return false
-end
-
 function save_widget(w::WidgetTable{TimeSeriesStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
     if !isfile(path); save_to_disk(w, w.data); return; end
-    old_df = CSV.read(path, DataFrame)
+    
+    # Typed read for join compatibility
+    old_df = CSV.read(path, DataFrame, types=Dict(:Full_Date => Date))
     new_df = w.data
+    
+    # Columns to check for uniqueness
     meta_cols = ["Timestamp", "Full_Date", "Scan_Date"]
     content_cols = filter(n -> !(n in meta_cols), names(new_df))
-    old_map = Dict{String, DataFrameRow}()
-    for row in eachrow(old_df)
-        d = string(row.Date)
-        if !haskey(old_map, d); old_map[d] = row; end
-    end
-    rows_to_keep = Int[]
-    for i in 1:nrow(new_df)
-        new_row = new_df[i, :]
-        d_key = string(new_row.Date)
-        if !haskey(old_map, d_key) || has_row_changed(new_row, old_map[d_key], content_cols)
-            push!(rows_to_keep, i)
-        end
-    end
-    if isempty(rows_to_keep); return; end
-    combined = vcat(new_df[rows_to_keep, :], old_df, cols=:union)
+    
+    # ⚡ ANTI-JOIN: "Rows in NEW that are NOT in OLD (by content)"
+    updates = antijoin(new_df, old_df, on=content_cols)
+    
+    if isempty(updates); return; end
+    
+    combined = vcat(updates, old_df, cols=:union)
     sort!(combined, :Timestamp, rev=true)
     unique!(combined, :Date)
     save_to_disk(w, combined)
@@ -175,7 +162,6 @@ function scroll_page(page)
     sleep(3)
 end
 
-# Updated JS: Guarantees "WidgetName","Col1","Col2"... format
 const JS_PAYLOAD = """
 (() => {
     try {
@@ -207,7 +193,6 @@ const JS_PAYLOAD = """
                     if (r.innerText.includes("No data")) return;
                     const cells = Array.from(r.querySelectorAll("th, td"));
                     if (!cells.length) return;
-                    // Force Header detection
                     const isHead = r.querySelector("th") !== null;
                     const line = cells.map(c => '"' + (isHead?cln(c.innerText):cln(c.innerText)) + '"').join(",");
                     out.push('"' + cln(name) + '",' + line);
@@ -245,59 +230,44 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
     buf = IOBuffer()
     for i in 0:50000:len
         chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))")
-        val = isa(chunk, Dict) ? chunk["value"] : chunk
-        print(buf, val)
+        print(buf, isa(chunk, Dict) ? chunk["value"] : chunk)
     end
     
     raw_csv = String(take!(buf))
     widgets = WidgetTable[]
     groups = Dict{String, Vector{String}}()
     
-    # 🔥 ROBUST PARSER (Fixes the Regex Issue)
     for line in eachline(IOBuffer(raw_csv))
-        # Skip empty or malformed lines
         if length(line) < 5 || !occursin(",", line); continue; end
         
-        # 1. Extract Widget Name (First Column)
-        # We split by first comma, assuming "Name","Col1","Col2"...
-        # We use a custom split logic to handle quotes safely
-        quote_end = findnext("\"", line, 2)
+        # 🩹 BUG FIX: Search for Char '"' instead of String "\""
+        quote_end = findnext('"', line, 2) 
         if isnothing(quote_end); continue; end
         
-        raw_key = line[2:prevind(line, quote_end)] # Strip quotes
+        raw_key = line[2:prevind(line, quote_end)]
         key = replace(raw_key, "MANUAL_CATCH_" => "")
         
-        # JUNK FILTER at Source: Skip "ATLAS" clause lines
         if key == "ATLAS" || occursin("Clause", line); continue; end
-        
         push!(get!(groups, key, String[]), line)
     end
     
-    @info "📊 Identified $(length(groups)) potential widgets."
+    @info "📊 Identified $(length(groups)) widgets."
 
     ts = get_ist()
     for (name, rows) in groups
-        # Find Header Row (Must contain relevant keywords)
         h_idx = findfirst(l -> occursin(r"Symbol|Name|Scan Name|Date", l), rows)
-        if isnothing(h_idx)
-             @warn "  ⚠️ Skipping [$name]: No valid header found."
-             continue
-        end
+        if isnothing(h_idx); continue; end
         
         io = IOBuffer()
-        # Remove the first column (Widget Name) from header and body
-        # Because we want the CSV to start with "Timestamp,Symbol,..."
+        # Helper to strip first col (Widget Name)
+        strip_first = l -> replace(l, r"^\"[^\"]+\"," => "")
         
-        # Helper to strip first col
-        strip_first_col(l) = replace(l, r"^\"[^\"]+\"," => "")
-        
-        println(io, "Timestamp," * strip_first_col(rows[h_idx]))
+        println(io, "Timestamp," * strip_first(rows[h_idx]))
         cols = length(split(rows[h_idx], "\",\""))
         
         for i in (h_idx+1):length(rows)
-             # Basic column count check + ignore repeated headers
              if abs(length(split(rows[i], "\",\"")) - cols) <= 2 && !occursin(r"Symbol|Name|Date", rows[i])
-                 println(io, "$ts," * strip_first_col(rows[i]))
+                 println(io, "$ts," * strip_first(rows[i]))
              end
         end
         
@@ -309,9 +279,7 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
             enrich!(df, strat)
             clean = replace(name, r"[^a-zA-Z0-9]" => "_")[1:min(end,50)]
             push!(widgets, WidgetTable(name, clean, df, folder_name, strat))
-        catch e
-             @warn "  ❌ Failed to parse table [$name]: $e"
-        end
+        catch; end
     end
     return widgets
 end
@@ -327,10 +295,6 @@ function get_dashboard_name(page)
                   x -> replace(strip(x), " " => "_")
     return isempty(clean_title) ? "Dashboard_Unknown" : clean_title
 end
-
-# ==============================================================================
-# 5. 🚀 MAIN PIPELINE
-# ==============================================================================
 
 function process_url(page, url)
     @info "🧭 Navigating to: $url"
