@@ -5,8 +5,7 @@ on:
   schedule:
     - cron: '*/5 * * * *' # Every 5 minutes
 
-# 🛡️ SAFETY: Ensures only one scraper runs at a time.
-# If a new run starts while the old one is still going, it cancels the old one (or waits).
+# 🛡️ SAFETY: Prevents overlapping runs.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -17,7 +16,7 @@ permissions:
 jobs:
   scrape-dashboard:
     runs-on: ubuntu-latest
-    timeout-minutes: 10   # 🛡️ SAFETY: Kills the job if Chrome hangs for >10 mins
+    timeout-minutes: 10   # 🛡️ SAFETY: Kills job if hanging >10 mins
 
     steps:
       - name: Check out repository 🛎️
@@ -31,16 +30,10 @@ jobs:
       - name: Cache Julia artifacts 💾
         uses: julia-actions/cache@v2
 
-      - name: Install Dependencies 📦
+      # ⚡ FAST SETUP: Uses the lockfile (Manifest.toml) for instant install
+      - name: Instantiate Dependencies 📦
         run: |
-          julia --project=. -e '
-            using Pkg
-            Pkg.Registry.update()
-            Pkg.add(["ChromeDevToolsLite","Dates" ,"JSON" ,"DataFrames","CSV"])
-            Pkg.resolve()
-            Pkg.instantiate()
-            Pkg.precompile()
-          '
+          julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Start Headless Chrome 🚀
         run: |
@@ -56,21 +49,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 1. Check & Commit FIRST (Locks the data safely)
+          # 1. Check & Commit FIRST
           if [ -d "chartink_data" ]; then
-             # Stage everything (including Manifest updates) to prevent "dirty tree" errors
              git add .
-             
              timestamp=$(date -u)
              git commit -m "📈 Data Update: ${timestamp}" || echo "No changes to commit"
           else
              echo "⚠️ No data folder generated."
-             exit 0 # Exit gracefully
+             exit 0
           fi
           
-          # 2. Pull Latest Changes (Rebase applies our commit ON TOP of remote)
-          # This prevents merge conflicts if two runs happen close together
+          # 2. Pull Latest Changes (Rebase to prevent conflicts)
           git pull --rebase
           
-          # 3. Push to GitHub
+          # 3. Push
           git push
