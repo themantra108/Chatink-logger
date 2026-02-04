@@ -91,7 +91,7 @@ function is_junk_widget(df::DataFrame)
 end
 
 # ==============================================================================
-# 4. 💾 SAVING LOGIC (Anti-Join)
+# 4. 💾 SAVING LOGIC
 # ==============================================================================
 
 function save_to_disk(w::WidgetTable, final_df::DataFrame)
@@ -118,17 +118,13 @@ function save_widget(w::WidgetTable{TimeSeriesStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
     if !isfile(path); save_to_disk(w, w.data); return; end
     
-    # Typed read for join compatibility
     old_df = CSV.read(path, DataFrame, types=Dict(:Full_Date => Date))
     new_df = w.data
     
-    # Columns to check for uniqueness
     meta_cols = ["Timestamp", "Full_Date", "Scan_Date"]
     content_cols = filter(n -> !(n in meta_cols), names(new_df))
     
-    # ⚡ ANTI-JOIN: "Rows in NEW that are NOT in OLD (by content)"
     updates = antijoin(new_df, old_df, on=content_cols)
-    
     if isempty(updates); return; end
     
     combined = vcat(updates, old_df, cols=:union)
@@ -230,7 +226,8 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
     buf = IOBuffer()
     for i in 0:50000:len
         chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))")
-        print(buf, isa(chunk, Dict) ? chunk["value"] : chunk)
+        val = isa(chunk, Dict) ? chunk["value"] : chunk
+        print(buf, val)
     end
     
     raw_csv = String(take!(buf))
@@ -240,46 +237,68 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
     for line in eachline(IOBuffer(raw_csv))
         if length(line) < 5 || !occursin(",", line); continue; end
         
-        # 🩹 BUG FIX: Search for Char '"' instead of String "\""
+        # 🩹 BUG FIX: Search for Char '"'
         quote_end = findnext('"', line, 2) 
         if isnothing(quote_end); continue; end
         
         raw_key = line[2:prevind(line, quote_end)]
         key = replace(raw_key, "MANUAL_CATCH_" => "")
         
+        # Skip purely junk config tables
         if key == "ATLAS" || occursin("Clause", line); continue; end
         push!(get!(groups, key, String[]), line)
     end
     
-    @info "📊 Identified $(length(groups)) widgets."
+    @info "📊 Identified $(length(groups)) potential widgets."
 
     ts = get_ist()
     for (name, rows) in groups
-        h_idx = findfirst(l -> occursin(r"Symbol|Name|Scan Name|Date", l), rows)
-        if isnothing(h_idx); continue; end
+        # Broad header regex to catch more tables
+        h_idx = findfirst(l -> occursin(r"Symbol|Name|Scan Name|Date|Price|Sector|Change", l), rows)
+        if isnothing(h_idx)
+             @warn "  ⚠️ Skipping [$name]: No header row found."
+             continue
+        end
         
         io = IOBuffer()
-        # Helper to strip first col (Widget Name)
         strip_first = l -> replace(l, r"^\"[^\"]+\"," => "")
         
+        # Write Header
         println(io, "Timestamp," * strip_first(rows[h_idx]))
-        cols = length(split(rows[h_idx], "\",\""))
         
+        # Write Body (Relaxed Validation)
+        # We removed the column counting check to avoid false negatives on "dirty" CSVs
+        count = 0
         for i in (h_idx+1):length(rows)
-             if abs(length(split(rows[i], "\",\"")) - cols) <= 2 && !occursin(r"Symbol|Name|Date", rows[i])
+             # Basic sanity: not empty, not another header
+             if length(rows[i]) > 5 && !occursin(r"Symbol|Name|Date", rows[i])
                  println(io, "$ts," * strip_first(rows[i]))
+                 count += 1
              end
+        end
+        
+        if count == 0
+            @warn "  ⚠️ Skipping [$name]: No data rows found."
+            continue
         end
         
         seekstart(io)
         try
             df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
-            if is_junk_widget(df); continue; end
+            
+            # Explicit Junk Logging
+            if is_junk_widget(df)
+                @info "  🗑️ Skipped Junk: $name"
+                continue 
+            end
+            
             strat = determine_strategy(df)
             enrich!(df, strat)
             clean = replace(name, r"[^a-zA-Z0-9]" => "_")[1:min(end,50)]
             push!(widgets, WidgetTable(name, clean, df, folder_name, strat))
-        catch; end
+        catch e
+             @warn "  ❌ Failed to parse [$name]: $e"
+        end
     end
     return widgets
 end
@@ -295,6 +314,10 @@ function get_dashboard_name(page)
                   x -> replace(strip(x), " " => "_")
     return isempty(clean_title) ? "Dashboard_Unknown" : clean_title
 end
+
+# ==============================================================================
+# 5. 🚀 MAIN PIPELINE
+# ==============================================================================
 
 function process_url(page, url)
     @info "🧭 Navigating to: $url"
