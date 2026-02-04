@@ -4,18 +4,16 @@ using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 # 1. 🧱 CONFIGURATION
 # ==============================================================================
 const TARGET_URLS = [
-    "https://chartink.com/dashboard/208896",  # Stocks/Sectors
-    "https://chartink.com/dashboard/419640"   # Market Condition
+    "https://chartink.com/dashboard/208896",
+    "https://chartink.com/dashboard/419640"
 ]
 const OUTPUT_ROOT = "chartink_data"
 
-# Navigation Safety
 const NAV_SLEEP_SEC = 5
 const MAX_WAIT_CYCLES = 60
 const SCROLL_STEP = 2500
 const SCROLL_SLEEP = 0.1
 
-# Regex & Map
 const DATE_REGEX = r"(\d+)(?:st|nd|rd|th)?\s+([a-zA-Z]+)"
 const MONTH_MAP = Dict("Jan"=>1, "Feb"=>2, "Mar"=>3, "Apr"=>4, "May"=>5, "Jun"=>6,
                        "Jul"=>7, "Aug"=>8, "Sep"=>9, "Oct"=>10, "Nov"=>11, "Dec"=>12)
@@ -26,28 +24,22 @@ get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 # 2. 🧠 LOGIC KERNELS
 # ==============================================================================
 
-# Core Date Inference (Pure Function)
 function infer_date(raw_str::AbstractString, ref_date::Date)
     m = match(DATE_REGEX, raw_str)
     if isnothing(m); return missing; end
     day, mon = parse(Int, m.captures[1]), MONTH_MAP[titlecase(m.captures[2])[1:3]]
     year_val = year(ref_date)
     ref_mon = month(ref_date)
-    
-    # Year Rollback Logic (Jan -> Dec)
     if mon > (ref_mon + 6); year_val -= 1; elseif mon < (ref_mon - 6); year_val += 1; end
-    
     try
         cand = Date(year_val, mon, day)
-        # Future Guard
         return cand > (ref_date + Day(2)) ? Date(year_val - 1, mon, day) : cand
     catch; return missing; end
 end
 
-# Strategy Types
 abstract type UpdateStrategy end
-struct Snapshot <: UpdateStrategy end   # Block Replacement
-struct SmartDiff <: UpdateStrategy end  # Row Diffing
+struct Snapshot <: UpdateStrategy end
+struct SmartDiff <: UpdateStrategy end
 
 struct WidgetTable{T <: UpdateStrategy}
     name::String
@@ -59,7 +51,6 @@ end
 
 detect_strategy(df) = "Date" in names(df) ? SmartDiff() : Snapshot()
 
-# Enrichment
 function enrich!(df::DataFrame, ::SmartDiff)
     ref = Date(get_ist())
     transform!(df, :Date => ByRow(d -> infer_date(string(d), ref)) => :Full_Date)
@@ -74,14 +65,13 @@ end
 is_junk(df) = isempty(df) || ("Col_1" in names(df) && occursin(r"Clause|\*", string(df[1,1])))
 
 # ==============================================================================
-# 3. 💾 SAVING LOGIC (The Anti-Join Upgrade) 📉
+# 3. 💾 SAVING LOGIC (Anti-Join)
 # ==============================================================================
 
 function save_to_disk(w::WidgetTable, final_df::DataFrame)
     folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
     mkpath(folder_path)
     path = joinpath(folder_path, w.clean_name * ".csv")
-    
     sort!(final_df, :Timestamp, rev=true)
     CSV.write(path, final_df)
     @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name)"
@@ -89,7 +79,6 @@ end
 
 function save_widget(w::WidgetTable)
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
-    
     if isfile(path)
         old_df = CSV.read(path, DataFrame)
         apply_strategy(w.strategy, w, old_df)
@@ -98,11 +87,8 @@ function save_widget(w::WidgetTable)
     end
 end
 
-# STRATEGY 1: SNAPSHOT (Anti-Join on Scan_Date)
 function apply_strategy(::Snapshot, w, old_df)
     if "Scan_Date" in names(w.data)
-        # "Give me rows from OLD history that are NOT in the NEW batch's dates"
-        # This deletes the stale version of today/yesterday instantly.
         history_kept = antijoin(old_df, w.data, on=:Scan_Date)
         save_to_disk(w, vcat(w.data, history_kept, cols=:union))
     else
@@ -110,36 +96,28 @@ function apply_strategy(::Snapshot, w, old_df)
     end
 end
 
-# STRATEGY 2: SMART DIFF (Anti-Join on Content)
 function apply_strategy(::SmartDiff, w, old_df)
-    # Define Content Columns (Ignore Metadata)
     ignore = ["Timestamp", "Full_Date", "Scan_Date"]
     common_cols = intersect(names(w.data), names(old_df))
     compare_cols = setdiff(common_cols, ignore)
     
-    # "Give me rows from NEW batch that do NOT exist in OLD history (content-wise)"
-    # This automatically finds changed rows or new dates.
     updates = antijoin(w.data, old_df, on=compare_cols)
-    
-    if isempty(updates); return; end # No changes? Skip write.
+    if isempty(updates); return; end
     
     combined = vcat(updates, old_df, cols=:union)
-    
-    # Dedupe: If multiple rows exist for the same logical "Date" (e.g., "2nd Feb"),
-    # we want the LATEST one.
-    sort!(combined, :Timestamp, rev=true)
-    unique!(combined, :Date) 
-    
+    unique!(combined, :Date)
     save_to_disk(w, combined)
 end
 
 # ==============================================================================
-# 4. 🌐 BROWSER INTERACTION
+# 4. 🌐 BROWSER INTERACTION (Robust)
 # ==============================================================================
 
-function wait_for_tables(page)
+# 🔥 IMPROVED: Waits for ACTUAL DATA (td cells), not just empty tables
+function wait_for_data(page)
     for _ in 1:MAX_WAIT_CYCLES
-        res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('table').length > 0")
+        # Check if there are at least 10 data cells (avoids empty loading skeletons)
+        res = ChromeDevToolsLite.evaluate(page, "document.querySelectorAll('td').length > 10")
         val = isa(res, Dict) ? res["value"] : res
         if val == true; return true; end
         sleep(1)
@@ -166,7 +144,7 @@ const JS_PAYLOAD = """
         
         const scanTable = (tbl, forcedName) => {
             let name = forcedName;
-            if (!name) { // Auto-name climbing
+            if (!name) {
                 let curr = tbl, d = 0;
                 while (curr && d++ < 12) {
                     let sib = curr.previousElementSibling;
@@ -199,7 +177,7 @@ const JS_PAYLOAD = """
             if (n.tagName === "TABLE") scanTable(n);
         });
 
-        // 2. Card Scanner (Market Breadth Fix)
+        // 2. Card Scanner
         document.querySelectorAll("div.card").forEach(c => {
             const h = c.querySelector(".card-header, h1, h2, h3, h4");
             const t = c.querySelector("table");
@@ -213,12 +191,24 @@ const JS_PAYLOAD = """
 """
 
 function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
-    @info "⚡ Extracting..."
-    ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
+    len = 0
     
-    len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0")
-    len_val = isa(len_res, Dict) ? len_res["value"] : len_res
-    len = try parse(Int, string(len_val)) catch; 0 end
+    # 🔥 RETRY LOGIC: Try 3 times to get data
+    for attempt in 1:3
+        @info "⚡ Extracting (Attempt $attempt)..."
+        ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
+        
+        len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0")
+        len_val = isa(len_res, Dict) ? len_res["value"] : len_res
+        len = try parse(Int, string(len_val)) catch; 0 end
+        
+        if len > 100 # Found substantial data
+            break 
+        else
+            @warn "  ⚠️ No data found yet. Waiting..."
+            sleep(3) # Give AJAX more time
+        end
+    end
     
     if len == 0; return WidgetTable[]; end
     
@@ -229,11 +219,11 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
         print(buf, val)
     end
     
-    full_csv = String(take!(buf))
+    raw_csv = String(take!(buf))
     widgets = WidgetTable[]
     groups = Dict{String, Vector{String}}()
     
-    for line in eachline(IOBuffer(full_csv))
+    for line in eachline(IOBuffer(raw_csv))
         length(line)<5 && continue
         m = match(r"^\"([^\"]+)\"", line)
         key = isnothing(m) ? "Unknown" : replace(m.captures[1], "MANUAL_CATCH_" => "")
@@ -259,10 +249,8 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
         try
             df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
             if is_junk(df); continue; end
-            
             strat = detect_strategy(df)
             enrich!(df, strat)
-            
             clean = replace(name, r"[^a-zA-Z0-9]" => "_")[1:min(end,50)]
             push!(widgets, WidgetTable(clean, df, folder_name, strat))
         catch; end
@@ -276,7 +264,7 @@ function get_dashboard_name(page)
     if isnothing(val) || val == ""; return "Unknown_Dashboard"; end
     
     clean_title = replace(val, " - Chartink.com" => "") |> 
-                  x -> replace(x, " - Chartink" => "") |>
+                  x -> replace(x, " - Chartink" => "") |> 
                   x -> replace(x, r"[^a-zA-Z0-9 \-_]" => "") |> 
                   x -> replace(strip(x), " " => "_")
     return isempty(clean_title) ? "Dashboard_Unknown" : clean_title
@@ -296,7 +284,11 @@ function process_url(page, url)
     folder_name = get_dashboard_name(page)
     @info "🏷️ Dashboard: $folder_name"
     
-    wait_for_tables(page)
+    # 🔥 Use Deep Wait
+    if !wait_for_data(page)
+        @warn "  ⚠️ Timed out waiting for data cells (td)."
+    end
+    
     scroll_page(page)
     
     return extract_and_parse(page, folder_name)
@@ -312,11 +304,8 @@ function main()
             for url in TARGET_URLS
                 @info "--- [TARGET] $url ---"
                 widgets = process_url(page, url)
-                
                 if !isempty(widgets)
-                    for w in widgets
-                        @async save_widget(w)
-                    end
+                    for w in widgets; @async save_widget(w); end
                 else
                     @warn "⚠️ No widgets found for $url"
                 end
