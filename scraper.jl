@@ -227,14 +227,13 @@ function scroll_page(page)
     sleep(2)
 end
 
-# 🔥 UPDATED PAYLOAD: Fixes "Sort table by..."
+# 🔥 UPDATED PAYLOAD: Includes H5/H6 support
 const JS_PAYLOAD = """
 (() => {
     try {
         let out = [];
         const cln = (t) => t ? t.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         
-        // Header Cleaner: Removes "Sort table by..." noise
         const cleanHeader = (txt) => {
             if (!txt) return "";
             return txt.replace(/Sort table by[\\s\\S]*/i, "")
@@ -286,9 +285,9 @@ const JS_PAYLOAD = """
             if (n.tagName === "TABLE") scan([n]);
         });
         
-        // 2. Cards
+        // 2. Cards (EXPANDED SELECTORS: H5, H6)
         document.querySelectorAll("div.card").forEach(c => {
-            const h = c.querySelector(".card-header, h1, h2, h3, h4");
+            const h = c.querySelector(".card-header, h1, h2, h3, h4, h5, h6");
             const t = c.querySelector("table");
             if (h && t) scan([t], "MANUAL_CATCH_" + cln(h.innerText));
         });
@@ -307,6 +306,7 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
     len_val = isa(len_res, Dict) ? len_res["value"] : len_res
     len = try parse(Int, string(len_val)) catch; 0 end
     
+    @info "  📊 JS found $(len) bytes." # DEBUG LOG
     if len == 0; return WidgetTable[]; end
     
     buf = IOBuffer()
