@@ -1,0 +1,57 @@
+name: One-Time Julia Setup 🛠️
+
+on:
+  workflow_dispatch: # Manual trigger only
+
+permissions:
+  contents: write
+
+jobs:
+  generate-tomls:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository 🛎️
+        uses: actions/checkout@v4
+
+      - name: Set up Julia (Latest) 🚀
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+
+      - name: Generate Dependency Files 📦
+        run: |
+          julia -e '
+            using Pkg
+            Pkg.activate(".")
+            
+            # 1. Add ALL Packages required by scraper.jl
+            Pkg.add("ChromeDevToolsLite")
+            Pkg.add("Dates")
+            Pkg.add("JSON")
+            Pkg.add("DataFrames")
+            Pkg.add("CSV")
+            
+            # 2. Lock Versions (Generates Manifest.toml)
+            Pkg.resolve()
+            Pkg.instantiate()
+          '
+
+      - name: Commit TOML files back to Repo 💾
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add Project.toml Manifest.toml
+          
+          # Only commit if files changed/created
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "📦 Init: Generated Julia dependency files"
+            
+            # 🛡️ REBASE: Crucial to prevent "rejected" push errors
+            git pull --rebase
+            
+            git push
+          fi
