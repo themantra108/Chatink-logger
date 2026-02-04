@@ -51,7 +51,8 @@ function determine_strategy(df::DataFrame)
     return "Date" in names(df) ? TimeSeriesStrategy() : SnapshotStrategy()
 end
 
-function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
+# 🩹 FIX: Renamed from enrich_dataframe! to enrich! to match the call
+function enrich!(df::DataFrame, ::TimeSeriesStrategy)
     nrows = nrow(df)
     full_dates = Vector{Union{Date, Missing}}(missing, nrows)
     scrape_date = Date(get_ist())
@@ -75,7 +76,8 @@ function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
     df[!, :Full_Date] = full_dates
 end
 
-function enrich_dataframe!(df::DataFrame, ::SnapshotStrategy)
+# 🩹 FIX: Renamed from enrich_dataframe! to enrich!
+function enrich!(df::DataFrame, ::SnapshotStrategy)
     if "Timestamp" in names(df)
         df[!, :Scan_Date] = Date.(df[!, :Timestamp])
     end
@@ -226,8 +228,7 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
     buf = IOBuffer()
     for i in 0:50000:len
         chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))")
-        val = isa(chunk, Dict) ? chunk["value"] : chunk
-        print(buf, val)
+        print(buf, isa(chunk, Dict) ? chunk["value"] : chunk)
     end
     
     raw_csv = String(take!(buf))
@@ -237,14 +238,12 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
     for line in eachline(IOBuffer(raw_csv))
         if length(line) < 5 || !occursin(",", line); continue; end
         
-        # 🩹 BUG FIX: Search for Char '"'
         quote_end = findnext('"', line, 2) 
         if isnothing(quote_end); continue; end
         
         raw_key = line[2:prevind(line, quote_end)]
         key = replace(raw_key, "MANUAL_CATCH_" => "")
         
-        # Skip purely junk config tables
         if key == "ATLAS" || occursin("Clause", line); continue; end
         push!(get!(groups, key, String[]), line)
     end
@@ -253,7 +252,6 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
 
     ts = get_ist()
     for (name, rows) in groups
-        # Broad header regex to catch more tables
         h_idx = findfirst(l -> occursin(r"Symbol|Name|Scan Name|Date|Price|Sector|Change", l), rows)
         if isnothing(h_idx)
              @warn "  ⚠️ Skipping [$name]: No header row found."
@@ -263,14 +261,10 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
         io = IOBuffer()
         strip_first = l -> replace(l, r"^\"[^\"]+\"," => "")
         
-        # Write Header
         println(io, "Timestamp," * strip_first(rows[h_idx]))
         
-        # Write Body (Relaxed Validation)
-        # We removed the column counting check to avoid false negatives on "dirty" CSVs
         count = 0
         for i in (h_idx+1):length(rows)
-             # Basic sanity: not empty, not another header
              if length(rows[i]) > 5 && !occursin(r"Symbol|Name|Date", rows[i])
                  println(io, "$ts," * strip_first(rows[i]))
                  count += 1
@@ -286,14 +280,13 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
         try
             df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
             
-            # Explicit Junk Logging
             if is_junk_widget(df)
                 @info "  🗑️ Skipped Junk: $name"
                 continue 
             end
             
             strat = determine_strategy(df)
-            enrich!(df, strat)
+            enrich!(df, strat) # <--- Calls the correctly named function now
             clean = replace(name, r"[^a-zA-Z0-9]" => "_")[1:min(end,50)]
             push!(widgets, WidgetTable(name, clean, df, folder_name, strat))
         catch e
@@ -314,10 +307,6 @@ function get_dashboard_name(page)
                   x -> replace(strip(x), " " => "_")
     return isempty(clean_title) ? "Dashboard_Unknown" : clean_title
 end
-
-# ==============================================================================
-# 5. 🚀 MAIN PIPELINE
-# ==============================================================================
 
 function process_url(page, url)
     @info "🧭 Navigating to: $url"
