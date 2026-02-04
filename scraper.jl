@@ -9,12 +9,10 @@ const TARGET_URLS = [
 ]
 const OUTPUT_ROOT = "chartink_data"
 
-# Navigation
 const NAV_SLEEP = 5
 const MAX_WAIT = 60
 const SCROLL_CFG = (step=2500, sleep=0.1)
 
-# Regex
 const DATE_REGEX = r"(\d+)(?:st|nd|rd|th)?\s+([a-zA-Z]+)"
 const MONTH_MAP = Dict("Jan"=>1, "Feb"=>2, "Mar"=>3, "Apr"=>4, "May"=>5, "Jun"=>6,
                        "Jul"=>7, "Aug"=>8, "Sep"=>9, "Oct"=>10, "Nov"=>11, "Dec"=>12)
@@ -110,16 +108,21 @@ function write_csv(path, df)
 end
 
 # ==============================================================================
-# 4. BROWSER AUTOMATION
+# 4. BROWSER AUTOMATION (Updated Payload)
 # ==============================================================================
 const JS_EXTRACT = """
 (() => {
     try {
         let out = [];
         const cln = (t) => t ? t.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
-        const scan = (nodes) => {
-            nodes.forEach((n, i) => {
-                let name = "Widget_" + i, curr = n, d = 0;
+        
+        // Helper to extract rows from ANY table element
+        const extractTable = (table, forceName = null) => {
+            let name = forceName;
+            
+            // 1. Auto-Naming (Climb DOM if no name provided)
+            if (!name) {
+                let curr = table, d = 0;
                 while (curr && d++ < 12) {
                     let sib = curr.previousElementSibling;
                     while (sib) {
@@ -129,28 +132,42 @@ const JS_EXTRACT = """
                         }
                         sib = sib.previousElementSibling;
                     }
-                    if (!name.includes("Widget_")) break;
+                    if (name) break;
                     curr = curr.parentElement;
                 }
-                const rows = n.querySelectorAll("tr");
-                if (!rows.length) return;
-                rows.forEach(r => {
-                    if (r.innerText.includes("No data")) return;
-                    const cells = Array.from(r.querySelectorAll("th, td"));
-                    if (!cells.length) return;
-                    const line = cells.map(c => '"' + (r.querySelector("th") ? cln(c.innerText) : cln(c.innerText)) + '"').join(",");
-                    out.push('"' + cln(name) + '",' + line);
-                });
+            }
+            if (!name) name = "Unknown Widget";
+
+            // 2. Row Extraction
+            const rows = table.querySelectorAll("tr");
+            if (!rows.length) return;
+            rows.forEach(r => {
+                if (r.innerText.includes("No data")) return;
+                const cells = Array.from(r.querySelectorAll("th, td"));
+                if (!cells.length) return;
+                const line = cells.map(c => '"' + cln(c.innerText) + '"').join(",");
+                out.push('"' + cln(name) + '",' + line);
             });
         };
-        scan(document.querySelectorAll("table, div.dataTables_wrapper"));
-        const heads = document.querySelectorAll("h1, h2, h3, h4, div.card-header");
-        heads.forEach(h => {
-            if (/Market|Condition|Breadth|Ratio/i.test(h.innerText)) {
-                let c = h.nextElementSibling || h.parentElement.nextElementSibling;
-                if (c && c.querySelector("table")) scan([c.querySelector("table")]);
+
+        // A. Standard DataTables
+        document.querySelectorAll("table, div.dataTables_wrapper").forEach(n => {
+            if (n.tagName === "TABLE") extractTable(n);
+        });
+
+        // B. Bootstrap CARD SCANNER (Fixes Market Breadth)
+        document.querySelectorAll("div.card").forEach(card => {
+            const header = card.querySelector(".card-header, h1, h2, h3, h4, h5");
+            const table = card.querySelector("table");
+            
+            // Only process if we found both header AND table
+            if (header && table) {
+                const title = cln(header.innerText);
+                // Tag it specifically so we know it came from the Card Scanner
+                extractTable(table, "MANUAL_CATCH_" + title);
             }
         });
+
         window._data = [...new Set(out)].join("\\n");
         return "DONE";
     } catch(e) { return "ERR:" + e; }
@@ -182,7 +199,7 @@ function process_url(page, url)
     len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0") |> x->isa(x,Dict) ? x["value"] : x
     len = try parse(Int, string(len_res)) catch; 0 end
     
-    @info "📊 JS found $(len) bytes of data." # Debug Log
+    @info "📊 JS found $(len) bytes."
     if len == 0; return []; end
 
     buf = IOBuffer()
@@ -191,15 +208,14 @@ function process_url(page, url)
         print(buf, isa(chunk, Dict) ? chunk["value"] : chunk)
     end
     
-    # 🩹 FIX: Read to string ONCE
-    full_csv_str = String(take!(buf))
+    full_csv = String(take!(buf))
     widgets = WidgetTable[]
     groups = Dict{String, Vector{String}}()
     
-    for line in eachline(IOBuffer(full_csv_str))
+    for line in eachline(IOBuffer(full_csv))
         length(line)<5 && continue
         m = match(r"^\"([^\"]+)\"", line)
-        key = isnothing(m) ? "Unknown" : m.captures[1]
+        key = isnothing(m) ? "Unknown" : replace(m.captures[1], "MANUAL_CATCH_" => "")
         push!(get!(groups, key, String[]), line)
     end
 
@@ -213,6 +229,7 @@ function process_url(page, url)
         cols = length(split(rows[h_idx], "\",\""))
         
         for i in (h_idx+1):length(rows)
+             # Basic validation to skip misaligned footer rows
              if abs(length(split(rows[i], "\",\"")) - cols) <= 2 && !occursin(r"Symbol|Name|Date", rows[i])
                  println(io, "$ts," * replace(rows[i], r"^\"[^\"]+\"," => ""))
              end
@@ -241,7 +258,6 @@ function main()
         @info "🔌 Connecting..."
         page = ChromeDevToolsLite.connect_browser()
         
-        # ⚡ FIXED ASYNC STRUCTURE
         @sync begin
             for url in TARGET_URLS
                 w = process_url(page, url)
