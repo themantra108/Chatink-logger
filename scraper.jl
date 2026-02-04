@@ -4,8 +4,8 @@ using ChromeDevToolsLite, Dates, JSON, DataFrames, CSV
 # 1. 🧱 CONFIGURATION & CONSTANTS
 # ==============================================================================
 const TARGET_URLS = [
-    "https://chartink.com/dashboard/208896",
-    "https://chartink.com/dashboard/419640"
+    "https://chartink.com/dashboard/419640",
+    "https://chartink.com/dashboard/208896"
 ]
 const OUTPUT_ROOT = "chartink_data"
 
