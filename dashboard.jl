@@ -2,7 +2,7 @@ using CSV, DataFrames, Dates, Printf
 using Mustache
 
 # ==============================================================================
-# 1. 📄 THE TEMPLATE (Performance Tuned)
+# 1. 📄 THE TEMPLATE (Solid Backgrounds Fix)
 # ==============================================================================
 const DASHBOARD_TEMPLATE = mt"""
 <!DOCTYPE html>
@@ -10,7 +10,7 @@ const DASHBOARD_TEMPLATE = mt"""
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chartink Pro (Fast)</title>
+    <title>Chartink Pro</title>
     
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/fixedcolumns/4.2.2/css/fixedColumns.dataTables.min.css">
@@ -18,34 +18,47 @@ const DASHBOARD_TEMPLATE = mt"""
     <style>
         body { font-family: -apple-system, sans-serif; background: #121212; color: #e0e0e0; padding: 10px; }
         
-        /* PERFORMANCE: 'contain' isolates the card rendering */
         .card { 
             background: #1e1e1e; 
             border: 1px solid #333; 
             border-radius: 8px; 
             padding: 10px; 
-            margin-bottom: 20px; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.4); 
-            contain: content; 
+            margin-bottom: 20px;
+            overflow: hidden; /* Stops content from bleeding out */
         }
         h3 { margin-top: 0; color: #bb86fc; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        
-        .timestamp { 
-            text-align: center; color: #4db6ac; font-size: 0.9rem; font-weight: bold;
-            margin-bottom: 20px; border: 1px solid #333; display: inline-block;
-            padding: 5px 15px; border-radius: 20px; background: #1a1a1a;
-        }
+        .timestamp { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
         .header-container { text-align: center; }
 
-        table.dataTable { font-size: 0.85rem; }
-        table.dataTable td { padding: 6px 8px; border-bottom: 1px solid #2d2d2d; }
-        table.dataTable thead th { background-color: #2c2c2c; border-bottom: 2px solid #555; }
+        /* --- 🔧 THE FIX: Z-INDEX & BACKGROUNDS --- */
         
-        /* Force GPU Acceleration for scrolling */
-        .dataTables_scrollBody {
-            -webkit-overflow-scrolling: touch;
-            will-change: transform;
+        /* 1. Force the Header to be Solid Dark Grey (No Transparency) */
+        table.dataTable thead th { 
+            background-color: #2c2c2c !important; 
+            color: #ffffff;
+            border-bottom: 2px solid #555;
+            z-index: 100; /* Sit on top of everything */
+            position: sticky;
         }
+
+        /* 2. Force the Sticky First Column to be Solid (Matches Card Color) */
+        table.dataTable tbody tr td:first-child {
+            background-color: #1e1e1e !important; /* Must match card background */
+            position: sticky;
+            left: 0;
+            z-index: 50; /* Sit on top of other cells */
+            border-right: 2px solid #333; /* Visual separator */
+        }
+
+        /* 3. Handle Stripe Rows (Alternating Colors) for the Sticky Column */
+        table.dataTable.stripe tbody tr.odd td:first-child {
+            background-color: #1e1e1e !important; /* Keep it consistent or slightly lighter if you want */
+        }
+
+        /* Standard Cell Styling */
+        table.dataTable td { padding: 8px 10px; border-bottom: 1px solid #2d2d2d; }
+        table.dataTable { border-collapse: separate; border-spacing: 0; }
+        
     </style>
     
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -65,31 +78,29 @@ const DASHBOARD_TEMPLATE = mt"""
     </div>
     <script>
         $(document).ready(function () {
-            $.fn.dataTable.ext.errMode = 'none';
-
+            $.fn.dataTable.ext.errMode = 'none'; // Suppress warnings
+            
             if (document.getElementById('{{id}}')) {
                 try {
                     $('#{{id}}').DataTable({
                         "order": [[ 0, "desc" ]],
                         "pageLength": 25,
-                        
-                        // ⚡ PERFORMANCE SETTINGS ⚡
-                        "deferRender": true,    // CRITICAL: Only render visible HTML
-                        "processing": true,     // Show "Processing..." indicator
-                        "orderClasses": false,  // Don't highlight sorted columns (Slow CSS)
-                        "autoWidth": false,     // Disable expensive math
+                        "deferRender": true,
+                        "processing": true,
                         
                         // Scroll Settings
                         "scrollX": true,
                         "scrollY": "60vh",
                         "scrollCollapse": true,
                         
-                        // Mobile Sticky Column
-                        "fixedColumns": { left: 1 },
+                        // Sticky Columns Plugin
+                        "fixedColumns": {
+                            left: 1 // Locks the first column
+                        },
                         
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
-                } catch(e) { console.log("Error: " + e); }
+                } catch(e) { console.log(e); }
             }
         });
     </script>
@@ -173,7 +184,6 @@ function main()
                     try
                         df = CSV.read(joinpath(root, file), DataFrame; strict=false, silencewarnings=true)
                         valid, msg = is_valid_table(df)
-                        
                         if valid
                             content = build_table_html(df, id)
                             push!(table_list, Dict("title" => clean_name, "id" => id, "content" => content))
@@ -195,7 +205,7 @@ function main()
     ))
     
     open("public/index.html", "w") do io; write(io, final_html); end
-    println("✅ Fast Dashboard generated.")
+    println("✅ Solid-Background Dashboard generated.")
 end
 
 main()
