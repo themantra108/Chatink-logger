@@ -1,13 +1,12 @@
 using CSV, DataFrames, Dates, Printf, Mustache
 
 # ==============================================================================
-# 1. 🎨 RULES & STYLES (The "Functional" Way)
+# 1. 🎨 RULES & STYLES
 # ==============================================================================
 const STYLE_R = "background-color: rgba(231, 76, 60, 0.5); color: white;"
 const STYLE_G = "background-color: rgba(46, 204, 113, 0.5); color: white;"
 const STYLE_Y = "background-color: rgba(241, 196, 15, 0.5); color: white;"
 
-# Define Rules as Data: (Regex Pattern, Function(value) -> Style)
 const COLOR_RULES = [
     (r"4\.5r",          v -> v > 400 ? STYLE_Y : v >= 200 ? STYLE_G : v < 50 ? STYLE_R : ""),
     (r"(4\.5|20|50)chg",v -> v < -20 ? STYLE_R : v > 20   ? STYLE_G : ""),
@@ -18,9 +17,7 @@ const COLOR_RULES = [
 function get_style(col::String, val)
     v = tryparse(Float64, string(val))
     isnothing(v) && return ""
-    
     c = replace(lowercase(col), " " => "")
-    # Find first matching rule and apply it
     for (pattern, rule) in COLOR_RULES
         occursin(pattern, c) && return rule(v)
     end
@@ -45,14 +42,11 @@ const TEMPLATE = mt"""
         h3 { color: #bb86fc; border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 0; }
         .ts { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
         
-        /* DataTable Styles */
         table.dataTable thead th { background: #2c2c2c !important; color: #fff; position: sticky; top: 0; z-index: 100; }
         table.dataTable tbody tr td:first-child { position: sticky; left: 0; z-index: 50; border-right: 2px solid #444; font-weight: 500; }
         table.dataTable tbody tr.even, table.dataTable tbody tr.even td:first-child { background: #1e1e1e !important; }
         table.dataTable tbody tr.odd, table.dataTable tbody tr.odd td:first-child { background: #2a2a2a !important; }
         table.dataTable td { white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; padding: 8px 10px; border-bottom: 1px solid #333; }
-        
-        /* Resize & Scroll */
         .dataTables_scrollBody { resize: vertical !important; border-bottom: 3px solid #444; min-height: 200px; }
     </style>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -77,9 +71,15 @@ const TEMPLATE = mt"""
 """
 
 function build_html_table(df::DataFrame, id::String)
+    # Cleanup Columns
     "Timestamp" in names(df) && select!(df, Not("Timestamp"))
     
-    # Header cleaning
+    # 🩹 FIX: Rename generic "Col_1" to "Symbol" (Fixes Backtest/History tables)
+    if "Col_1" in names(df)
+        rename!(df, "Col_1" => "Symbol")
+    end
+
+    # Header Sanitization
     headers = names(df)
     safe_headers = String[]
     seen = Set{String}()
@@ -91,7 +91,6 @@ function build_html_table(df::DataFrame, id::String)
         push!(seen, safe); push!(safe_headers, safe)
     end
 
-    # Build HTML String efficiently
     io = IOBuffer()
     print(io, "<table id='$id' class='display compact stripe nowrap' style='width:100%'><thead><tr>")
     foreach(h -> print(io, "<th>$h</th>"), safe_headers)
@@ -100,7 +99,6 @@ function build_html_table(df::DataFrame, id::String)
     for row in eachrow(df)
         print(io, "<tr>")
         for (col, val) in pairs(row)
-            # Apply Style & Format Number
             sty = get_style(string(col), val)
             fmt_val = val isa Real ? @sprintf("%.2f", val) : ismissing(val) ? "-" : val
             print(io, "<td style='$sty'>$fmt_val</td>")
@@ -119,7 +117,6 @@ function main()
     data_dir = "chartink_data"
     tables = Dict{String, String}[]
 
-    # Find all CSVs recursively
     files = []
     if isdir(data_dir)
         for (root, _, fs) in walkdir(data_dir)
@@ -132,9 +129,12 @@ function main()
         try
             df = CSV.read(file, DataFrame; strict=false, silencewarnings=true)
             
-            # Short-circuit Validation
+            # 🛑 CRITICAL FILTERS
             (nrow(df) == 0 || ncol(df) < 2) && continue
-            occursin(r"(#|\*|Clause)", string(df[1,1])) && continue # Junk filter
+            
+            # 1. Kill the "Clause" table (Junk data)
+            first_val = string(df[1,1])
+            (occursin("#", first_val) || occursin("*", first_val) || occursin("Clause", first_val)) && continue
             
             clean_name = replace(basename(file), ".csv" => "")
             id = "tbl_" * replace(clean_name, r"[^a-zA-Z0-9]" => "")
@@ -151,7 +151,7 @@ function main()
 
     ist_time = Dates.format(now(Dates.UTC) + Hour(5) + Minute(30), "yyyy-mm-dd I:MM p") * " IST"
     write("public/index.html", render(TEMPLATE, Dict("time" => ist_time, "tables" => tables)))
-    println("✅ Concise Dashboard Generated.")
+    println("✅ Dashboard Generated (Junk Removed).")
 end
 
 main()
