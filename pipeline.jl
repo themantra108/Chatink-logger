@@ -1,41 +1,35 @@
 using ChromeDevToolsLite, DataFrames, CSV, Dates, JSON, Printf, Mustache
 
 # ==============================================================================
-# 1. 🛠️ CORE UTILS & TYPES
+# 1. 🛠️ CORE UTILS
 # ==============================================================================
 module Utils
     using Dates
-    
-    # Custom Exception for Retry Logic
-    struct PageLoadError <: Exception; msg::String; end
-
-    # 🇮🇳 Time Helper
     get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
     fmt_ist(dt) = Dates.format(dt, "yyyy-mm-dd I:MM p") * " IST"
 
-    # 🔁 Robust Retry Macro
+    function clean_header(h::String)
+        h = replace(h, r"(?i)Sort\s*table\s*by.*" => "")
+        h = replace(h, r"[^a-zA-Z0-9%\.]" => "")
+        return strip(h)
+    end
+
     macro retry(n, delay, expr)
         quote
-            local result
-            local success = false
+            local result, success = nothing, false
             for i in 1:$n
                 try
-                    result = $(esc(expr))
-                    success = true
-                    break
-                catch e
-                    @warn "Attempt $i failed: $(e)"
-                    sleep($delay)
-                end
+                    result = $(esc(expr)); success = true; break
+                catch e; sleep($delay); end
             end
-            if !success; error("Operation failed after $($n) attempts"); end
+            if !success; error("Failed after $($n) attempts"); end
             result
         end
     end
 end
 
 # ==============================================================================
-# 2. 🧱 DOMAIN CONFIG
+# 2. 🧱 CONFIG
 # ==============================================================================
 module Config
     const TARGETS = [
@@ -48,7 +42,7 @@ module Config
 end
 
 # ==============================================================================
-# 3. 🕸️ SCRAPER ENGINE
+# 3. 🕸️ SCRAPER
 # ==============================================================================
 module Scraper
     using ..Utils, ..Config
@@ -60,51 +54,70 @@ module Scraper
         data::DataFrame
     end
 
-    # JS Payload (Minified & Optimized)
+    # 🔥 IMPROVED JS: Ensures unique names for every table
     const EXTRACTOR_JS = """
     (() => {
         const clean = t => t ? t.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         let csv = [];
-        
-        const scanTable = (node, forcedTitle) => {
-            let title = forcedTitle || "Unknown";
-            if(!forcedTitle) {
-                // Heuristic: Find nearest heading above table
-                let curr = node, d=0;
-                while(curr && d++ < 10) {
-                    let sib = curr.previousElementSibling;
-                    while(sib) {
-                        if(/H[1-6]|DIV/.test(sib.tagName) && sib.innerText.length > 3) {
-                            title = sib.innerText.split('\\n')[0]; break;
-                        }
-                        sib = sib.previousElementSibling;
-                    }
-                    if(title !== "Unknown") break;
-                    curr = curr.parentElement;
-                }
+        let seenTitles = {};
+
+        const processTable = (table, rawTitle) => {
+            // 1. Generate Unique Title
+            let baseTitle = clean(rawTitle) || "Unknown_Widget";
+            if (seenTitles[baseTitle]) {
+                seenTitles[baseTitle]++;
+                baseTitle = baseTitle + "_" + seenTitles[baseTitle];
+            } else {
+                seenTitles[baseTitle] = 1;
             }
-            
-            node.querySelectorAll("tr").forEach(row => {
+
+            // 2. Extract Rows
+            const rows = table.querySelectorAll("tr");
+            rows.forEach(row => {
                 if(row.innerText.includes("No data")) return;
+                
                 const cells = Array.from(row.querySelectorAll("th, td"));
-                if(!cells.length) return;
-                const rowStr = cells.map(c => '"' + clean(c.innerText) + '"').join(",");
-                csv.push('"' + clean(title) + '",' + rowStr);
+                if(cells.length < 2) return; // Skip empty/malformed rows
+                
+                // Check for hidden columns (DataTables often duplicates headers)
+                // We only want visible text
+                const rowStr = cells.map(c => {
+                    return '"' + clean(c.innerText) + '"';
+                }).join(",");
+                
+                csv.push('"' + baseTitle + '",' + rowStr);
             });
         };
 
-        document.querySelectorAll("table").forEach(t => scanTable(t));
-        document.querySelectorAll(".card").forEach(c => {
-            let h = c.querySelector(".card-header");
-            let t = c.querySelector("table");
-            if(h && t) scanTable(t, h.innerText);
+        // Strategy A: Find Chartink 'Cards' (Most Reliable)
+        document.querySelectorAll("div.card").forEach(card => {
+            const header = card.querySelector(".card-header");
+            const table = card.querySelector("table");
+            if (table) {
+                // If header exists, use it. Otherwise look for h3/h4 inside.
+                let title = header ? header.innerText : "";
+                if(!title) {
+                    const h = card.querySelector("h1,h2,h3,h4,h5");
+                    if(h) title = h.innerText;
+                }
+                processTable(table, title);
+                table.setAttribute("data-scraped", "true"); // Mark as done
+            }
+        });
+
+        // Strategy B: Cleanup any loose tables not in cards
+        document.querySelectorAll("table").forEach(table => {
+            if(!table.hasAttribute("data-scraped")) {
+                processTable(table, "Misc_Table");
+            }
         });
         
-        return [...new Set(csv)].join("\\n");
+        return csv.join("\\n");
     })()
     """
 
     function is_valid(df::DataFrame)
+        # Must have data, at least 2 cols, and not be a filter description
         nrow(df) > 0 && ncol(df) >= 2 && !occursin(r"(#|\*|Clause)", string(df[1,1]))
     end
 
@@ -113,27 +126,28 @@ module Scraper
         Utils.@retry 3 5 begin
             ChromeDevToolsLite.goto(page, url)
         end
-        sleep(10) # Let Chartink JS settle
+        sleep(8) 
         
-        # Scroll for lazy loading
+        # 📜 Slow Scroll to trigger all lazy widgets
         h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight")
         h_val = isa(h, Dict) ? h["value"] : h
-        for s in 0:2000:h_val
+        # Slower scroll step (1000px) and longer sleep (0.5s)
+        for s in 0:1000:h_val
             ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)")
-            sleep(0.2)
+            sleep(0.5) 
         end
+        sleep(2) # Final settle
 
-        # Extract CSV Data
         raw_res = ChromeDevToolsLite.evaluate(page, EXTRACTOR_JS)
         raw_csv = isa(raw_res, Dict) ? raw_res["value"] : raw_res
         
         if isempty(raw_csv); return Widget[]; end
         
-        # Parse CSV Blob into DataFrames
         widgets = Widget[]
         rows = split(raw_csv, "\n")
         grouped = Dict{String, Vector{String}}()
         
+        # Group raw CSV lines by Title
         for r in rows
             m = match(r"^\"([^\"]+)\"", r)
             k = isnothing(m) ? "Unknown" : m.captures[1]
@@ -141,20 +155,33 @@ module Scraper
         end
 
         for (title, lines) in grouped
-            # Reconstruct CSV for this widget
-            # Remove the first column (Widget Name) from the lines
+            # Remove title column to get pure CSV data for this widget
             clean_lines = map(l -> replace(l, r"^\"[^\"]+\"," => ""), lines)
             
-            # Identify Header
-            header_idx = findfirst(l -> occursin(r"\"(Symbol|Name|Date)\"", l), clean_lines)
-            isnothing(header_idx) && continue
+            # Find the Header Row (Contains "Symbol" or "Name")
+            header_idx = findfirst(l -> occursin(r"\"(Symbol|Name|Date|Scan Name)\"", l), clean_lines)
             
-            # Prepare Buffer: Timestamp + Header + Data
+            # If no obvious header, use the first row if it looks header-ish
+            if isnothing(header_idx) && length(clean_lines) > 0
+                header_idx = 1 
+            end
+            
+            isnothing(header_idx) && continue
+
+            # Clean Header Row immediately
+            raw_header = clean_lines[header_idx]
+            cleaned_header = replace(raw_header, r"(?i)Sort\s*table\s*by[^,\"]*" => "")
+            
             io = IOBuffer()
-            println(io, "\"Timestamp\"," * clean_lines[header_idx])
+            println(io, "\"Timestamp\"," * cleaned_header)
             ts = Utils.get_ist()
+            
+            # Add data rows
             for i in (header_idx+1):length(clean_lines)
-                println(io, "\"$ts\"," * clean_lines[i])
+                # Skip rows that just repeat headers (Chartink glitch)
+                if clean_lines[i] != raw_header
+                    println(io, "\"$ts\"," * clean_lines[i])
+                end
             end
             
             try
@@ -165,7 +192,7 @@ module Scraper
                     push!(widgets, Widget(title, clean_id, df))
                 end
             catch e
-                @warn "Failed to parse widget: $title"
+                @warn "Parsing failed for $title: $e"
             end
         end
         return widgets
@@ -173,22 +200,19 @@ module Scraper
 
     function run()
         page = ChromeDevToolsLite.connect_browser()
-        all_widgets = Widget[]
-        for url in Config.TARGETS
-            append!(all_widgets, process_page(page, url))
-        end
-        return all_widgets
+        widgets = Widget[]
+        for url in Config.TARGETS; append!(widgets, process_page(page, url)); end
+        return widgets
     end
 end
 
 # ==============================================================================
-# 4. 📊 DASHBOARD RENDERER
+# 4. 📊 DASHBOARD
 # ==============================================================================
 module Dashboard
     using ..Utils, ..Config, ..Scraper
     using DataFrames, CSV, Printf, Mustache
 
-    # 🎨 Styling Rules
     const RULES = [
         (r"4\.5r",          v -> v > 400 ? "background:#f1c40f80" : v >= 200 ? "background:#2ecc7180" : v < 50 ? "background:#e74c3c80" : ""),
         (r"(4\.5|20|50)chg",v -> v < -20 ? "background:#e74c3c80" : v > 20   ? "background:#2ecc7180" : ""),
@@ -207,34 +231,30 @@ module Dashboard
     function save_history(w::Scraper.Widget)
         path = joinpath(Config.DATA_DIR, w.clean_name * ".csv")
         mkpath(dirname(path))
-        
-        # Merge if exists
         final_df = w.data
         if isfile(path)
             old_df = CSV.read(path, DataFrame)
-            # Simple Union (Snapshot strategy)
+            # Remove old "junk" columns if they exist in history
+            if "Column22" in names(old_df); select!(old_df, Not("Column22")); end
+            
             final_df = vcat(w.data, old_df, cols=:union)
-            # Dedup based on Timestamp + Symbol (if available)
-            if "Symbol" in names(final_df)
-                unique!(final_df, ["Timestamp", "Symbol"])
-            end
+            cols = intersect(["Timestamp", "Symbol", "Date"], names(final_df))
+            !isempty(cols) && unique!(final_df, cols)
         end
-        
-        # Limit history to prevent bloat (optional, keep last 5000 rows)
         if nrow(final_df) > 5000; final_df = first(final_df, 5000); end
-        
         CSV.write(path, final_df)
         return final_df
     end
 
     function df_to_html(df::DataFrame, id::String)
-        # Cleanup
         "Timestamp" in names(df) && select!(df, Not("Timestamp"))
         "Col_1" in names(df) && rename!(df, "Col_1" => "Symbol")
         
-        # Headers
+        # Remove empty columns like "Column22"
+        select!(df, Not(filter(n -> occursin(r"Column\d+", string(n)), names(df))))
+
         headers = names(df)
-        safe_headers = [replace(string(h), r"[^a-zA-Z0-9]" => "") for h in headers]
+        safe_headers = map(Utils.clean_header, headers)
         
         io = IOBuffer()
         print(io, "<table id='$id' class='display compact stripe nowrap' style='width:100%'><thead><tr>")
@@ -259,50 +279,30 @@ module Dashboard
         view_data = Dict{String, Any}[]
         
         for w in widgets
-            # 1. Save History
-            full_df = save_history(w)
-            
-            # 2. Prepare View (Show only latest snapshot for dashboard speed)
-            # Or show full history? Let's show the data we just scraped (Fresh)
-            # If you want full history on dashboard, change w.data to full_df
-            view_df = w.data 
-            
-            id = "tbl_" * w.clean_name
+            save_history(w)
             push!(view_data, Dict(
                 "title" => w.name,
-                "id" => id,
-                "content" => df_to_html(view_df, id)
+                "id" => "tbl_" * w.clean_name,
+                "content" => df_to_html(w.data, "tbl_" * w.clean_name)
             ))
         end
         
-        # 3. Render
         tpl = read(Config.TEMPLATE_FILE, String)
-        out = Mustache.render(tpl, Dict(
-            "time" => Utils.fmt_ist(Utils.get_ist()), 
-            "tables" => view_data
-        ))
-        
+        out = Mustache.render(tpl, Dict("time" => Utils.fmt_ist(Utils.get_ist()), "tables" => view_data))
         write(joinpath(Config.PUBLIC_DIR, "index.html"), out)
-        @info "✅ Dashboard Built with $(length(widgets)) widgets."
+        @info "✅ Built $(length(widgets)) tables."
     end
 end
 
 # ==============================================================================
-# 5. 🚀 MAIN ENTRY POINT
+# 5. 🚀 MAIN
 # ==============================================================================
 function main()
     try
-        @info "🚀 Starting Pipeline..."
         widgets = Scraper.run()
-        
-        if isempty(widgets)
-            @error "No widgets found! Check URLs or Selectors."
-        else
-            Dashboard.build(widgets)
-        end
-        
+        isempty(widgets) ? @error("No widgets found") : Dashboard.build(widgets)
     catch e
-        @error "Pipeline Crashed" exception=(e, catch_backtrace())
+        @error "Crash" exception=(e, catch_backtrace())
         exit(1)
     end
 end
