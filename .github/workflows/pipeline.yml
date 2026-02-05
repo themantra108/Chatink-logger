@@ -2,9 +2,9 @@ name: 🚀 Chartink Pipeline
 
 on:
   workflow_dispatch:       # 1. Manual Trigger
-  push:                    # 2. Trigger on Code Push
-    branches:
-      - main
+  #push:                    # 2. Trigger on Code Push
+  #  branches:
+  #    - main
   schedule:                # 3. Trigger on Schedule (Every 5 mins)
     - cron: '*/5 * * * *'
 
