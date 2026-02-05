@@ -1,0 +1,23 @@
+# ... previous steps (Setup Julia, Install Packages) ...
+
+      - name: Start Headless Chrome 🚀
+        run: |
+          google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 &
+          sleep 5
+
+      # 🔥 SINGLE UNIFIED STEP
+      - name: Run Pipeline (Scrape + Build) 🏗️
+        run: julia --project=. pipeline.jl
+
+      - name: Commit and Push Data 💾
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --staged --quiet; then
+              echo "No changes."
+          else
+              git commit -m "📈 Data Update: $(date -u)"
+              git pull --rebase
+              git push
+          fi
