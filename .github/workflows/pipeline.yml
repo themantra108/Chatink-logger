@@ -1,23 +1,86 @@
-# ... previous steps (Setup Julia, Install Packages) ...
+name: 🚀 Chartink Pipeline (Scrape + Build)
 
-      - name: Start Headless Chrome 🚀
+on:
+  workflow_dispatch:      # Manual trigger button
+  schedule:
+    - cron: '*/5 * * * *' # Runs every 5 minutes
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  unified-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # 1. 🛠️ Checkout Code
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # 2. 🟢 Set up Julia
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+
+      # 3. 📦 Cache & Install Dependencies
+      # This ensures 'Mustache', 'ChromeDevToolsLite', etc. are ready
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Install Dependencies
+        run: |
+          julia --project=. -e '
+            using Pkg
+            Pkg.instantiate()
+            # Safety check to ensure critical packages are present
+            Pkg.add(["ChromeDevToolsLite", "DataFrames", "CSV", "Dates", "JSON", "Printf", "Mustache"])
+            Pkg.resolve()
+          '
+
+      # 4. 🌐 Start Headless Chrome
+      - name: Start Headless Chrome
         run: |
           google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 &
           sleep 5
 
-      # 🔥 SINGLE UNIFIED STEP
-      - name: Run Pipeline (Scrape + Build) 🏗️
+      # 5. 🏗️ RUN THE UNIFIED PIPELINE
+      # This replaces both 'scraper.jl' and 'dashboard.jl'
+      - name: Run Pipeline (Scrape -> Save -> Build)
         run: julia --project=. pipeline.jl
 
-      - name: Commit and Push Data 💾
+      # 6. 🚀 Deploy Dashboard to GitHub Pages
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          keep_files: true
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+
+      # 7. 💾 Commit CSV Data Back to Repo
+      - name: Save Data History
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Stage all changes (Data CSVs + Manifest updates)
           git add .
+          
+          # Only commit if there is new data
           if git diff --staged --quiet; then
-              echo "No changes."
+              echo "No changes to data."
           else
-              git commit -m "📈 Data Update: $(date -u)"
+              timestamp=$(date -u)
+              git commit -m "📈 Data Update: ${timestamp}"
+              
+              # Pull latest changes to avoid conflicts, then push
               git pull --rebase
               git push
           fi
