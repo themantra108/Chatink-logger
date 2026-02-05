@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chartink Pro</title>
+    <title>Chartink Pro (IST)</title>
     
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/fixedcolumns/4.2.2/css/fixedColumns.dataTables.min.css">
@@ -12,7 +12,15 @@
         body { font-family: -apple-system, sans-serif; background: #121212; color: #e0e0e0; padding: 10px; }
         .card { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.4); }
         h3 { margin-top: 0; color: #bb86fc; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .timestamp { text-align: center; color: #666; font-size: 0.8rem; margin-bottom: 20px; }
+        
+        /* IST Timestamp Styling */
+        .timestamp { 
+            text-align: center; color: #4db6ac; font-size: 0.9rem; font-weight: bold;
+            margin-bottom: 20px; border: 1px solid #333; display: inline-block;
+            padding: 5px 15px; border-radius: 20px; background: #1a1a1a;
+        }
+        .header-container { text-align: center; }
+        .error-badge { color: #ff5252; border: 1px solid #ff5252; padding: 10px; border-radius: 4px; text-align: center; font-size: 0.8rem; }
 
         /* Table Styles */
         table.dataTable { font-size: 0.85rem; }
@@ -25,8 +33,10 @@
     <script src="https://cdn.datatables.net/fixedcolumns/4.2.2/js/dataTables.fixedColumns.min.js"></script>
 </head>
 <body>
-    <h1 style="text-align:center">📊 Market Dashboard</h1>
-    <div class="timestamp">Last Updated: 2026-02-05T06:04:28.046 UTC</div>
+    <div class="header-container">
+        <h1>📊 Market Dashboard</h1>
+        <div class="timestamp">Last Updated: 2026-02-05 11:42 AM IST</div>
+    </div>
 
     <div class="card">
         <h3>1_day_Check</h3>
@@ -739,15 +749,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_1dayCheck').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_1dayCheck')) {
+                $('#tbl_1dayCheck').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -884,15 +897,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_3dayCheck').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_3dayCheck')) {
+                $('#tbl_3dayCheck').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -1120,15 +1136,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_4dayCheck').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_4dayCheck')) {
+                $('#tbl_4dayCheck').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -1315,15 +1334,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_5dayCheck').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_5dayCheck')) {
+                $('#tbl_5dayCheck').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -1699,15 +1721,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_7dayCheck').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_7dayCheck')) {
+                $('#tbl_7dayCheck').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -2241,15 +2266,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_7daysignal').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_7daysignal')) {
+                $('#tbl_7daysignal').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -2282,15 +2310,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_ATLAS').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_ATLAS')) {
+                $('#tbl_ATLAS').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -2926,15 +2957,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_Aboutto').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_Aboutto')) {
+                $('#tbl_Aboutto').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -2964,15 +2998,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_EpisodicPivot').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_EpisodicPivot')) {
+                $('#tbl_EpisodicPivot').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -3320,15 +3357,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_Firsttimer').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_Firsttimer')) {
+                $('#tbl_Firsttimer').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -5001,15 +5041,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_MMTMainScannerDaily').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_MMTMainScannerDaily')) {
+                $('#tbl_MMTMainScannerDaily').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -8096,15 +8139,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_MOVINGAVERAGEALIGNMENT').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_MOVINGAVERAGEALIGNMENT')) {
+                $('#tbl_MOVINGAVERAGEALIGNMENT').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -8113,24 +8159,24 @@
 <thead><tr>
 <th>Timestamp</th>
 <th>Date</th>
-<th>4.5r</th>
-<th>4.5chg</th>
+<th>45r</th>
+<th>45chg</th>
 <th>20r</th>
 <th>20chg</th>
 <th>50r</th>
 <th>50chg</th>
 <th>52wh</th>
 <th>52wl</th>
-<th>>4.5+</th>
-<th><4.5-</th>
-<th>>10sma</th>
-<th><10sma</th>
-<th>>20sma</th>
-<th><20sma</th>
-<th>>50sma</th>
-<th><50sma</th>
-<th>>200sma</th>
-<th><200sma</th>
+<th>45</th>
+<th>45-</th>
+<th>10sma</th>
+<th>10sma</th>
+<th>20sma</th>
+<th>20sma</th>
+<th>50sma</th>
+<th>50sma</th>
+<th>200sma</th>
+<th>200sma</th>
 <th>Total stocks</th>
 <th>Full_Date</th>
 </tr></thead>
@@ -10084,15 +10130,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_Mktcondition').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_Mktcondition')) {
+                $('#tbl_Mktcondition').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -10404,15 +10453,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_Mod5dayCheck').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_Mod5dayCheck')) {
+                $('#tbl_Mod5dayCheck').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -11062,15 +11114,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_Mod7dayCheck').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_Mod7dayCheck')) {
+                $('#tbl_Mod7dayCheck').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -11082,7 +11137,7 @@
 <th>Cmp</th>
 <th>%ch</th>
 <th>Low3</th>
-<th>Initial_atr1.5sl</th>
+<th>Initial_atr15sl</th>
 <th>Sl</th>
 <th>Target</th>
 <th>0d_high</th>
@@ -11343,15 +11398,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_ModsignalRS').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_ModsignalRS')) {
+                $('#tbl_ModsignalRS').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -12091,15 +12149,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_RS').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_RS')) {
+                $('#tbl_RS').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -14043,15 +14104,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_RSRatingScore').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_RSRatingScore')) {
+                $('#tbl_RSRatingScore').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -14062,22 +14126,22 @@
 <th>Symbol</th>
 <th>F_pe</th>
 <th>Pe</th>
-<th>Eps[a]</th>
-<th>Eps[a1]</th>
+<th>Epsa</th>
+<th>Epsa1</th>
 <th>Eps</th>
-<th>Eps[1]</th>
-<th>Eps[3]</th>
-<th>Sales[a]</th>
-<th>Sales[a1]</th>
+<th>Eps1</th>
+<th>Eps3</th>
+<th>Salesa</th>
+<th>Salesa1</th>
 <th>Sales</th>
-<th>Sales[2]</th>
-<th>Sales[3]</th>
+<th>Sales2</th>
+<th>Sales3</th>
 <th>Roce</th>
 <th>Fii</th>
-<th>Fii[1]</th>
-<th>Fii[2]</th>
-<th>Fii[a]</th>
-<th>Fii[a1]</th>
+<th>Fii1</th>
+<th>Fii2</th>
+<th>Fiia</th>
+<th>Fiia1</th>
 <th>Scan_Date</th>
 </tr></thead>
 <tbody>
@@ -17766,15 +17830,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_funda').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_funda')) {
+                $('#tbl_funda').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -17807,15 +17874,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_ATLAS').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_ATLAS')) {
+                $('#tbl_ATLAS').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
     <div class="card">
@@ -17824,24 +17894,24 @@
 <thead><tr>
 <th>Timestamp</th>
 <th>Date</th>
-<th>4.5r</th>
-<th>4.5chg</th>
+<th>45r</th>
+<th>45chg</th>
 <th>20r</th>
 <th>20chg</th>
 <th>50r</th>
 <th>50chg</th>
 <th>52wh</th>
 <th>52wl</th>
-<th>>4.5+</th>
-<th><4.5-</th>
-<th>>10sma</th>
-<th><10sma</th>
-<th>>20sma</th>
-<th><20sma</th>
-<th>>50sma</th>
-<th><50sma</th>
-<th>>200sma</th>
-<th><200sma</th>
+<th>45</th>
+<th>45-</th>
+<th>10sma</th>
+<th>10sma</th>
+<th>20sma</th>
+<th>20sma</th>
+<th>50sma</th>
+<th>50sma</th>
+<th>200sma</th>
+<th>200sma</th>
 <th>Total stocks</th>
 <th>Full_Date</th>
 </tr></thead>
@@ -19795,15 +19865,18 @@
     </div>
     <script>
         $(document).ready(function () {
-            $('#tbl_Mktcondition').DataTable({
-                "order": [[ 0, "desc" ]],
-                "pageLength": 25,
-                "scrollX": true,
-                "scrollY": "60vh",
-                "scrollCollapse": true,
-                "fixedColumns": { left: 1 },
-                "language": { "search": "", "searchPlaceholder": "Search..." }
-            });
+            // Only init DataTables if the table actually exists
+            if (document.getElementById('tbl_Mktcondition')) {
+                $('#tbl_Mktcondition').DataTable({
+                    "order": [[ 0, "desc" ]],
+                    "pageLength": 25,
+                    "scrollX": true,
+                    "scrollY": "60vh",
+                    "scrollCollapse": true,
+                    "fixedColumns": { left: 1 },
+                    "language": { "search": "", "searchPlaceholder": "Search..." }
+                });
+            }
         });
     </script>
 </body>
