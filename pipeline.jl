@@ -8,6 +8,14 @@ module Utils
     get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
     fmt_ist(dt) = Dates.format(dt, "yyyy-mm-dd I:MM p") * " IST"
 
+    function clean_filename(s::String)
+        # Replace non-alphanumeric with underscores, keep dots/dashes
+        s = replace(s, r"[^a-zA-Z0-9\-\.]" => "_")
+        # Collapse multiple underscores
+        s = replace(s, r"__+" => "_")
+        return strip(s, '_')
+    end
+
     function clean_header(h::String)
         h = replace(h, r"(?i)Sort\s*table\s*by.*" => "")
         h = replace(h, r"[^a-zA-Z0-9%\.]" => "")
@@ -49,26 +57,24 @@ module Scraper
     using ChromeDevToolsLite, DataFrames, CSV, Dates, JSON
 
     struct Widget
-        name::String
-        clean_name::String
+        dashboard::String   # 📂 Folder Name
+        name::String        # 📄 File Name (Readable)
+        clean_name::String  # 📄 File Name (System Safe)
         data::DataFrame
     end
 
-    # 🔥 SMART EXTRACTOR: Hunts for titles if they are missing
     const EXTRACTOR_JS = """
     (() => {
         const clean = t => t ? t.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         let csv = [];
         let seenTitles = {};
 
-        // Helper: Look backwards for a header tag
         const findNearestHeader = (node) => {
             let curr = node;
             let limit = 0;
             while(curr && limit++ < 5) {
                 let sib = curr.previousElementSibling;
                 while(sib) {
-                    // Check for H tags or Bold text that looks like a title
                     if (/H[1-6]|B|STRONG/.test(sib.tagName) && sib.innerText.length > 3) {
                         return sib.innerText;
                     }
@@ -85,13 +91,9 @@ module Scraper
 
         const processTable = (table, rawTitle) => {
             let baseTitle = clean(rawTitle);
-            
-            // If we still have a generic title, try to find a better one
             if (!baseTitle || baseTitle.includes("Misc_Table") || baseTitle.includes("Untitled")) {
                  baseTitle = clean(findNearestHeader(table));
             }
-
-            // Ensure Uniqueness
             if (seenTitles[baseTitle]) {
                 seenTitles[baseTitle]++;
                 baseTitle = baseTitle + "_" + seenTitles[baseTitle];
@@ -110,7 +112,6 @@ module Scraper
             });
         };
 
-        // Strategy A: Standard Cards
         document.querySelectorAll("div.card").forEach(card => {
             const header = card.querySelector(".card-header");
             const table = card.querySelector("table");
@@ -125,10 +126,8 @@ module Scraper
             }
         });
 
-        // Strategy B: Loose Tables (Title Hunter)
         document.querySelectorAll("table").forEach(table => {
             if(!table.hasAttribute("data-scraped")) {
-                // Instead of "Misc_Table", we now hunt for the title!
                 processTable(table, findNearestHeader(table));
             }
         });
@@ -141,6 +140,18 @@ module Scraper
         nrow(df) > 0 && ncol(df) >= 2 && !occursin(r"(#|\*|Clause)", string(df[1,1]))
     end
 
+    function get_dashboard_name(page)
+        # 1. Try document title
+        raw = ChromeDevToolsLite.evaluate(page, "document.title")
+        val = isa(raw, Dict) ? raw["value"] : raw
+        
+        # 2. Clean it ("My Dashboard - Chartink.com" -> "My_Dashboard")
+        clean = replace(val, r"(?i)\s*-\s*Chartink.*" => "")
+        clean = Utils.clean_filename(clean)
+        
+        return isempty(clean) ? "Unknown_Dashboard" : clean
+    end
+
     function process_page(page, url)
         @info "🧭 Navigating: $url"
         Utils.@retry 3 5 begin
@@ -148,7 +159,10 @@ module Scraper
         end
         sleep(8) 
         
-        # Scroll
+        # Determine Folder Name from Page Title
+        dash_folder = get_dashboard_name(page)
+        @info "📂 Dashboard Detected: $dash_folder"
+
         h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight")
         h_val = isa(h, Dict) ? h["value"] : h
         for s in 0:1000:h_val
@@ -194,8 +208,9 @@ module Scraper
                 seekstart(io)
                 df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
                 if is_valid(df)
-                    clean_id = replace(title, r"[^a-zA-Z0-9]" => "_")
-                    push!(widgets, Widget(title, clean_id, df))
+                    clean_id = Utils.clean_filename(title)
+                    # Pass the dashboard folder name to the Widget
+                    push!(widgets, Widget(dash_folder, title, clean_id, df))
                 end
             catch e
                 @warn "Parsing failed: $title"
@@ -235,9 +250,13 @@ module Dashboard
     end
 
     function save_history(w::Scraper.Widget)
-        path = joinpath(Config.DATA_DIR, w.clean_name * ".csv")
-        mkpath(dirname(path))
+        # 📂 USE DASHBOARD NAME AS FOLDER
+        folder_path = joinpath(Config.DATA_DIR, w.dashboard)
+        mkpath(folder_path)
+        
+        path = joinpath(folder_path, w.clean_name * ".csv")
         final_df = w.data
+        
         if isfile(path)
             old_df = CSV.read(path, DataFrame)
             if "Column22" in names(old_df); select!(old_df, Not("Column22")); end
@@ -279,14 +298,33 @@ module Dashboard
     function build(widgets::Vector{Scraper.Widget})
         mkpath(Config.PUBLIC_DIR)
         view_data = Dict{String, Any}[]
+        
+        # Group Widgets by Dashboard for better HTML display
+        grouped_widgets = Dict{String, Vector{Scraper.Widget}}()
         for w in widgets
-            save_history(w)
-            push!(view_data, Dict("title" => w.name, "id" => "tbl_" * w.clean_name, "content" => df_to_html(w.data, "tbl_" * w.clean_name)))
+            push!(get!(grouped_widgets, w.dashboard, Scraper.Widget[]), w)
         end
+
+        # Flatten for the template (or you could enhance template to show sections)
+        # For now, we'll prefix title: "Dashboard / Widget"
+        for (dash_name, dash_widgets) in grouped_widgets
+            for w in dash_widgets
+                save_history(w)
+                display_title = "$dash_name / $(w.name)"
+                unique_id = "tbl_" * Utils.clean_filename(dash_name) * "_" * w.clean_name
+                
+                push!(view_data, Dict(
+                    "title" => display_title,
+                    "id" => unique_id,
+                    "content" => df_to_html(w.data, unique_id)
+                ))
+            end
+        end
+        
         tpl = read(Config.TEMPLATE_FILE, String)
         out = Mustache.render(tpl, Dict("time" => Utils.fmt_ist(Utils.get_ist()), "tables" => view_data))
         write(joinpath(Config.PUBLIC_DIR, "index.html"), out)
-        @info "✅ Built $(length(widgets)) tables."
+        @info "✅ Built $(length(widgets)) tables across $(length(grouped_widgets)) dashboards."
     end
 end
 
