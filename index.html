@@ -1,36 +1,89 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Chartink Dashboard</title>
-    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-    <style>
-    body { font-family: -apple-system, sans-serif; background: #1a1a1a; color: #e0e0e0; padding: 20px; }
-    h1 { color: #9b59b6; }
-    .card { background: #2d2d2d; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th, td { padding: 8px 12px; text-align: right; border-bottom: 1px solid #404040; }
-    th { text-align: left; background: #333; color: #aaa; position: sticky; top: 0; }
-    tr:hover { filter: brightness(1.2); }
-    .timestamp { font-size: 0.8rem; color: #666; margin-bottom: 10px; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chartink Mobile</title>
     
-    /* DataTables Overrides */
-    .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter, 
-    .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate {
-        color: #aaa !important;
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/fixedcolumns/4.2.2/css/fixedColumns.dataTables.min.css">
+    <style>
+    /* --- Base Styles --- */
+    body { 
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, sans-serif; 
+        background: #121212; 
+        color: #e0e0e0; 
+        margin: 0; 
+        padding: 10px; /* Reduced padding for mobile */
     }
-    input, select { background: #404040 !important; border: none; color: white !important; padding: 5px; border-radius: 4px; }
+    h1 { color: #bb86fc; font-size: 1.5rem; margin: 10px 0 5px 0; text-align: center; }
+    .timestamp { text-align: center; color: #666; font-size: 0.8rem; margin-bottom: 20px; }
+    
+    /* --- Card Container --- */
+    .card { 
+        background: #1e1e1e; 
+        border: 1px solid #333;
+        border-radius: 8px; 
+        padding: 10px; 
+        margin-bottom: 20px; 
+        box-shadow: 0 4px 6px rgba(0,0,0,0.4); 
+        overflow: hidden; /* Contains the scroll */
+    }
+    h3 { margin-top: 0; color: #eee; font-size: 1.1rem; border-bottom: 1px solid #333; padding-bottom: 10px; }
+
+    /* --- DataTable Customization --- */
+    table.dataTable { 
+        font-size: 0.85rem; 
+        border-collapse: separate; /* Required for sticky columns */
+    }
+    table.dataTable tbody td { padding: 6px 8px; border-bottom: 1px solid #2d2d2d; }
+    table.dataTable thead th { 
+        padding: 8px 10px; 
+        background: #2c2c2c; 
+        border-bottom: 2px solid #555; 
+        white-space: nowrap; 
+    }
+    
+    /* Color coding text logic */
+    td { font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; } /* Monospace numbers */
+
+    /* --- MOBILE OPTIMIZATIONS (The Julia Way) --- */
+    @media screen and (max-width: 768px) {
+        body { padding: 5px; }
+        .card { padding: 5px; border-radius: 4px; }
+        h1 { font-size: 1.2rem; }
+        
+        /* Force horizontal scroll container to be smooth on touch */
+        .dataTables_scrollBody {
+            -webkit-overflow-scrolling: touch; 
+        }
+        
+        /* Adjust font for density */
+        table.dataTable { font-size: 0.75rem; }
+        table.dataTable tbody td { padding: 4px 5px; }
+        
+        /* Hide non-essential controls on tiny screens */
+        .dataTables_length { display: none; } 
+    }
+    
+    /* Input Styling */
+    .dataTables_filter input { background: #333; border: none; color: white; padding: 5px; border-radius: 4px; }
+    .dataTables_wrapper .dataTables_paginate .paginate_button { color: #888 !important; }
+    .dataTables_wrapper .dataTables_paginate .paginate_button.current { background: #444 !important; border: none; color: white !important; }
 </style>
 
+    
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/fixedcolumns/4.2.2/js/dataTables.fixedColumns.min.js"></script>
 </head>
 <body>
     <h1>📊 Market Dashboard</h1>
-    <div class="timestamp">Last Updated: 2026-02-05T05:04:25.504 UTC</div>
+    <div class="timestamp">Last Updated: 2026-02-05T05:30:41.150 UTC</div>
 
 <div class="card">
     <h3>1_day_Check</h3>
-    <table id="dayCheck" class="display">
+    <table id="tbl_1dayCheck" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -739,16 +792,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#dayCheck').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_1dayCheck').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>3_day_Check</h3>
-    <table id="dayCheck" class="display">
+    <table id="tbl_3dayCheck" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -880,16 +944,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#dayCheck').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_3dayCheck').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>4_day_Check</h3>
-    <table id="dayCheck" class="display">
+    <table id="tbl_4dayCheck" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -1112,16 +1187,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#dayCheck').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_4dayCheck').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>5_day_Check</h3>
-    <table id="dayCheck" class="display">
+    <table id="tbl_5dayCheck" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -1303,16 +1389,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#dayCheck').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_5dayCheck').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>7_day_Check</h3>
-    <table id="dayCheck" class="display">
+    <table id="tbl_7dayCheck" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -1683,16 +1780,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#dayCheck').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_7dayCheck').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>7day_signal</h3>
-    <table id="daysignal" class="display">
+    <table id="tbl_7daysignal" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -2221,16 +2329,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#daysignal').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_7daysignal').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>ATLAS</h3>
-    <table id="ATLAS" class="display">
+    <table id="tbl_ATLAS" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Col_1</th>
@@ -2258,16 +2377,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#ATLAS').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_ATLAS').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>About_to</h3>
-    <table id="Aboutto" class="display">
+    <table id="tbl_Aboutto" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -2924,16 +3054,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#Aboutto').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_Aboutto').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>Episodic_Pivot</h3>
-    <table id="EpisodicPivot" class="display">
+    <table id="tbl_EpisodicPivot" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -2958,16 +3099,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#EpisodicPivot').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_EpisodicPivot').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>First_timer</h3>
-    <table id="Firsttimer" class="display">
+    <table id="tbl_Firsttimer" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -3334,16 +3486,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#Firsttimer').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_Firsttimer').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>MMT__Main_Scanner__Daily</h3>
-    <table id="MMTMainScannerDaily" class="display">
+    <table id="tbl_MMTMainScannerDaily" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -4945,16 +5108,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#MMTMainScannerDaily').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_MMTMainScannerDaily').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>MOVING_AVERAGE_ALIGNMENT</h3>
-    <table id="MOVINGAVERAGEALIGNMENT" class="display">
+    <table id="tbl_MOVINGAVERAGEALIGNMENT" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -8261,16 +8435,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#MOVINGAVERAGEALIGNMENT').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_MOVINGAVERAGEALIGNMENT').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>Mkt_condition</h3>
-    <table id="Mktcondition" class="display">
+    <table id="tbl_Mktcondition" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Date</th>
@@ -10245,16 +10430,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#Mktcondition').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_Mktcondition').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>Mod_5_day_Check</h3>
-    <table id="ModdayCheck" class="display">
+    <table id="tbl_Mod5dayCheck" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -10561,16 +10757,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#ModdayCheck').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_Mod5dayCheck').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>Mod_7_day_Check</h3>
-    <table id="ModdayCheck" class="display">
+    <table id="tbl_Mod7dayCheck" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -11215,16 +11422,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#ModdayCheck').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_Mod7dayCheck').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>Mod_signal_RS</h3>
-    <table id="ModsignalRS" class="display">
+    <table id="tbl_ModsignalRS" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -11492,16 +11710,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#ModsignalRS').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_ModsignalRS').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>RS</h3>
-    <table id="RS" class="display">
+    <table id="tbl_RS" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -12288,16 +12517,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#RS').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_RS').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>RS_Rating_Score</h3>
-    <table id="RSRatingScore" class="display">
+    <table id="tbl_RSRatingScore" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -14236,16 +14476,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#RSRatingScore').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_RSRatingScore').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>funda</h3>
-    <table id="funda" class="display">
+    <table id="tbl_funda" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Symbol</th>
@@ -17955,16 +18206,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#funda').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_funda').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>ATLAS</h3>
-    <table id="ATLAS" class="display">
+    <table id="tbl_ATLAS" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Col_1</th>
@@ -17992,16 +18254,27 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#ATLAS').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_ATLAS').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
 
 <div class="card">
     <h3>Mkt_condition</h3>
-    <table id="Mktcondition" class="display">
+    <table id="tbl_Mktcondition" class="display compact stripe nowrap" style="width:100%">
 <thead><tr>
 <th>Timestamp</th>
 <th>Date</th>
@@ -19976,9 +20249,20 @@
 </div>
 <script>
     $(document).ready(function () {
-        $('#Mktcondition').DataTable({
-            "order": [[ 0, "desc" ]], # Sort by first column (Date)
-            "pageLength": 25
+        $('#tbl_Mktcondition').DataTable({
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "scrollX": true,             // 📱 Vital for mobile
+            "scrollY": "60vh",           // 📱 60% of screen height
+            "scrollCollapse": true,
+            "paging": true,
+            "fixedColumns": {
+                left: 1                  // ⚓ Locks the 1st column (Stock Name/Date)
+            },
+            "language": {
+                "search": "",            // Minimalist search box
+                "searchPlaceholder": "Search..."
+            }
         });
     });
 </script>
