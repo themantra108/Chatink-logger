@@ -8,7 +8,6 @@ module Utils
     get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
     fmt_ist(dt) = Dates.format(dt, "yyyy-mm-dd I:MM p") * " IST"
 
-    # 🔥 FIX: Use AbstractString to handle SubString (split/strip results)
     function clean_filename(s::AbstractString)
         s = replace(s, r"[^a-zA-Z0-9\-\.]" => "_")
         s = replace(s, r"__+" => "_")
@@ -16,8 +15,8 @@ module Utils
     end
 
     function clean_header(h::AbstractString)
-        # Aggressive cleaning of "Sort table by..." artifacts
-        h = replace(h, r"(?i)Sort\s*(table|tab|column)\s*by.*" => "")
+        # Kill "Sort table by..." and all its variants
+        h = replace(h, r"(?i)Sort\s*(table|tab|column).*$" => "")
         h = replace(h, r"[^a-zA-Z0-9%\.]" => "")
         return strip(h)
     end
@@ -70,26 +69,28 @@ module Scraper
 
     function is_valid_title(t::AbstractString)
         length(t) < 2 && return false
-        length(t) > 100 && return false
+        length(t) > 80 && return false
         low = lowercase(t)
         startswith(low, "note") && return false
         startswith(low, "disclaimer") && return false
         occursin("delayed", low) && return false
         occursin("generated", low) && return false
+        # If it contains "Sort table by", it's garbage
+        occursin("sort table", low) && return false
         return true
     end
 
     function hunt_title(table_node::HTMLNode)
         curr = table_node
-        for _ in 1:10
+        for _ in 1:15
             parent = getattr(curr, "parent", nothing)
             if isnothing(parent) || !isa(parent, HTMLElement); break; end
             
-            # 1. Check if Parent is a Card/Widget
+            # 1. Check Container Classes (Card/Portlet)
             if haskey(parent.attributes, "class")
                 cls = parent.attributes["class"]
                 if occursin("card", cls) || occursin("portlet", cls) || occursin("widget", cls)
-                    headers = eachmatch(Selector(".card-header, .portlet-title, .widget-header, h3, h4"), parent)
+                    headers = eachmatch(Selector(".card-header, .portlet-title, .widget-header, h3, h4, .caption"), parent)
                     for h in headers
                         htxt = Utils.clean_text(nodeText(h))
                         if is_valid_title(htxt); return htxt; end
@@ -97,7 +98,7 @@ module Scraper
                 end
             end
 
-            # 2. Check Previous Siblings
+            # 2. Check Previous Siblings (Aggressive Text Scan)
             siblings = parent.children
             idx = findfirst(==(curr), siblings)
             if !isnothing(idx)
@@ -105,15 +106,21 @@ module Scraper
                     sib = siblings[i]
                     if !isa(sib, HTMLElement); continue; end
                     
-                    # Direct Heading
+                    # Check the sibling text directly
+                    # If it's a Header tag OR Bold tag OR just a Div/Span with text
                     tag_name = uppercase(string(tag(sib)))
-                    if tag_name in ["H1","H2","H3","H4","B","STRONG"]
+                    
+                    if tag_name in ["H1","H2","H3","H4","B","STRONG","DIV","SPAN","P"]
                         txt = Utils.clean_text(nodeText(sib))
-                        if is_valid_title(txt); return txt; end
+                        if is_valid_title(txt)
+                            # Extra check: If it's a P/Div/Span, ensure it looks like a title (short, capitalized)
+                            if tag_name in ["DIV","SPAN","P"] && length(txt) > 50; continue; end
+                            return txt
+                        end
                     end
                     
-                    # Nested Heading
-                    nested_headers = eachmatch(Selector("h1, h2, h3, h4, b, strong, .card-title"), sib)
+                    # Check inside the sibling
+                    nested_headers = eachmatch(Selector("h1, h2, h3, h4, b, strong, .card-title, .caption-subject"), sib)
                     for nh in nested_headers
                         ntxt = Utils.clean_text(nodeText(nh))
                         if is_valid_title(ntxt); return ntxt; end
@@ -132,9 +139,7 @@ module Scraper
         header_cells = eachmatch(Selector("th, td"), rows[1])
         if isempty(header_cells); return DataFrame(); end
         
-        # Get raw text
         raw_headers = [Utils.clean_text(nodeText(c)) for c in header_cells]
-        # Clean them (now works because Utils accepts AbstractString)
         col_names = map(Utils.clean_header, raw_headers)
         
         df = DataFrame()
@@ -161,6 +166,7 @@ module Scraper
                 if j > length(col_names); break; end
                 txt = Utils.clean_text(nodeText(cell))
                 
+                # Filter out junk rows
                 if j == 1 && txt == col_names[1]; skip_row = true; break; end
                 if occursin("No data", txt); skip_row = true; break; end
                 
@@ -287,7 +293,7 @@ module Dashboard
         safe_headers = map(Utils.clean_header, headers)
         
         io = IOBuffer()
-        print(io, "<table id='$id' class='display compact stripe nowrap' style='width:100%'><thead><tr>")
+        print(io, "<div style='overflow-x:auto'><table id='$id' class='display compact stripe nowrap' style='width:100%'><thead><tr>")
         foreach(h -> print(io, "<th>$h</th>"), safe_headers)
         print(io, "</tr></thead><tbody>")
         
@@ -306,7 +312,7 @@ module Dashboard
             end
             print(io, "</tr>")
         end
-        print(io, "</tbody></table>")
+        print(io, "</tbody></table></div>")
         return String(take!(io))
     end
 
