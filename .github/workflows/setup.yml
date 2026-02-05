@@ -32,7 +32,6 @@ jobs:
             Pkg.add("DataFrames")
             Pkg.add("CSV")
             Pkg.add("Printf")
-            Pkg.add("PrettyTables")
             Pkg.add("Mustache")
             
             # 2. Lock Versions (Generates Manifest.toml)
