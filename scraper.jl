@@ -8,9 +8,7 @@ const TARGET_URLS = [
     "https://chartink.com/dashboard/208896"
 ]
 const OUTPUT_ROOT = "chartink_data"
-
-# 🛡️ Safety Settings (Increased for stability)
-const NAV_SLEEP_SEC = 15         # Wait 15s for page to settle (Fixes Timeouts)
+const NAV_SLEEP_SEC = 15
 const SCROLL_STEP = 2000
 const SCROLL_SLEEP = 0.5
 
@@ -22,15 +20,29 @@ const MONTH_MAP = Dict{SubString{String}, Int}(
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-# ==============================================================================
-# 2. 🧠 TYPE SYSTEM
-# ==============================================================================
 struct WidgetTable
     name::String
     clean_name::String
     data::DataFrame
     subfolder::String
     has_date_col::Bool 
+end
+
+# ==============================================================================
+# 2. 🛡️ FILTERS (The "Junk" Remover)
+# ==============================================================================
+function is_junk_widget(df::DataFrame)
+    if nrow(df) == 0; return true; end
+    
+    # Check the very first cell of the table
+    # Chartink filter descriptions always start with #, *, or Clause
+    first_val = string(df[1,1])
+    
+    if occursin("Clause", first_val) || occursin("*", first_val) || occursin("#", first_val)
+        return true # It is junk
+    end
+    
+    return false # It is real data
 end
 
 # ==============================================================================
@@ -45,12 +57,10 @@ function parse_chartink_date(date_str::AbstractString)
 end
 
 function enrich_dataframe!(df::DataFrame)
-    # 1. Snapshot Timestamp (Always add)
     if "Timestamp" in names(df)
         df[!, :Scan_Date] = Date.(df[!, :Timestamp])
     end
 
-    # 2. Time Series Enrichment (If Date column exists)
     if "Date" in names(df)
         nrows = nrow(df)
         full_dates = Vector{Union{Date, Missing}}(missing, nrows)
@@ -64,13 +74,11 @@ function enrich_dataframe!(df::DataFrame)
             (day, mon) = parse_chartink_date(raw_val)
             if day == 0 || mon == 0; continue; end
             
-            # Year Rollback Logic (Handle Dec -> Jan transition)
             if last_month < 3 && mon > 10; current_year -= 1;
             elseif last_month > 10 && mon < 3; current_year += 1; end
             
             try
                 cand = Date(current_year, mon, day)
-                # Future protection: If date is > 2 days in future, it implies previous year
                 if cand > (scrape_date + Day(2)); cand = Date(current_year - 1, mon, day); current_year -= 1; end
                 full_dates[i] = cand
             catch; end
@@ -80,17 +88,8 @@ function enrich_dataframe!(df::DataFrame)
     end
 end
 
-function is_junk_widget(df::DataFrame)
-    if nrow(df) == 0; return true; end
-    if "Col_1" in names(df)
-        val = string(df[1,1])
-        return occursin("Clause", val) || occursin("*", val)
-    end
-    return false
-end
-
 # ==============================================================================
-# 4. 💾 SAVING LOGIC (Unified)
+# 4. 💾 SAVING LOGIC
 # ==============================================================================
 function save_to_disk(w::WidgetTable, final_df::DataFrame)
     folder_path = joinpath(OUTPUT_ROOT, w.subfolder)
@@ -110,18 +109,13 @@ function has_row_changed(new_row, old_row, check_cols)
     return false
 end
 
-# 🔥 FIXED: Consolidated function to prevent UndefVarError
 function save_widget(w::WidgetTable)
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
-    
-    # 1. New File? Just save.
     if !isfile(path); save_to_disk(w, w.data); return; end
 
-    # 2. Existing File - Load it
     old_df = CSV.read(path, DataFrame)
     
     if w.has_date_col
-        # --- Time Series Strategy ---
         new_df = w.data
         meta_cols = ["Timestamp", "Full_Date", "Scan_Date"]
         content_cols = filter(n -> !(n in meta_cols), names(new_df))
@@ -143,11 +137,9 @@ function save_widget(w::WidgetTable)
         
         if isempty(rows_to_keep); return; end
         combined = vcat(new_df[rows_to_keep, :], old_df, cols=:union)
-        unique!(combined, :Date) # Safety dedup
+        unique!(combined, :Date)
         save_to_disk(w, combined)
-
     else
-        # --- Snapshot Strategy ---
         if "Scan_Date" in names(w.data)
             active_dates = unique(dropmissing(w.data, :Scan_Date).Scan_Date)
             filter!(row -> ismissing(row.Scan_Date) || !(row.Scan_Date in active_dates), old_df)
@@ -179,7 +171,6 @@ const JS_PAYLOAD = """
             if (!txt) return "";
             return txt.replace(/Sort table by[\\s\\S]*/i, "").replace(/\\n/g, " ").replace(/\\s+/g, " ").trim();
         };
-        
         const scan = (nodes, forcedName) => {
             nodes.forEach((n, i) => {
                 let name = forcedName;
@@ -199,7 +190,6 @@ const JS_PAYLOAD = """
                     }
                 }
                 if (!name) name = "Unknown Widget " + i;
-                
                 const rows = n.querySelectorAll("tr");
                 if (!rows.length) return;
                 rows.forEach(r => {
@@ -215,17 +205,14 @@ const JS_PAYLOAD = """
                 });
             });
         };
-
         document.querySelectorAll("table, div.dataTables_wrapper").forEach(n => {
             if (n.tagName === "TABLE") scan([n]);
         });
-        
         document.querySelectorAll("div.card").forEach(c => {
             const h = c.querySelector(".card-header, h1, h2, h3, h4, h5, h6");
             const t = c.querySelector("table");
             if (h && t) scan([t], "MANUAL_CATCH_" + cln(h.innerText));
         });
-
         window._data = [...new Set(out)].join("\\n");
         return "DONE";
     } catch(e) { return "ERR:" + e; }
@@ -235,19 +222,16 @@ const JS_PAYLOAD = """
 function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
     @info "⚡ Extracting..."
     ChromeDevToolsLite.evaluate(page, "eval($(JSON.json(JS_PAYLOAD)))")
-    
     len_res = ChromeDevToolsLite.evaluate(page, "window._data ? window._data.length : 0")
     len_val = isa(len_res, Dict) ? len_res["value"] : len_res
     len = try parse(Int, string(len_val)) catch; 0 end
     
-    @info "  📊 JS found $(len) bytes."
     if len == 0; return WidgetTable[]; end
     
     buf = IOBuffer()
     for i in 0:50000:len
         chunk = ChromeDevToolsLite.evaluate(page, "window._data.substring($i, $(min(i+50000, len)))")
-        val = isa(chunk, Dict) ? chunk["value"] : chunk
-        print(buf, val)
+        print(buf, isa(chunk, Dict) ? chunk["value"] : chunk)
     end
     
     raw_csv = String(take!(buf))
@@ -293,9 +277,13 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
             seekstart(io)
             try
                 df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
-                if is_junk_widget(df); continue; end
                 
-                # Enrich & Add
+                # 🛑 THE FIX: Filter Junk BEFORE doing anything else
+                if is_junk_widget(df)
+                    @warn "🗑️ Discarding Junk Widget: $clean_name"
+                    continue 
+                end
+                
                 enrich_dataframe!(df)
                 has_date = "Date" in names(df)
                 push!(widgets, WidgetTable(name, clean_name, df, folder_name, has_date))
@@ -317,66 +305,40 @@ function get_dashboard_name(page)
     return isempty(clean_title) ? "Dashboard_Unknown" : clean_title
 end
 
-# ==============================================================================
-# 6. 🚀 MAIN PIPELINE
-# ==============================================================================
 function process_url(page, url)
     @info "🧭 Navigating: $url"
     ChromeDevToolsLite.evaluate(page, "window._data = null;")
-    
-    try
-        # 🛡️ NAVIGATION RETRY LOOP
-        # We try 3 times. If fails, we return empty list.
-        success = false
-        for attempt in 1:3
-            try
-                ChromeDevToolsLite.goto(page, url)
-                success = true
-                break
-            catch e
-                @warn "Attempt $attempt failed: $e"
-                sleep(5)
-            end
-        end
-        
-        if !success; throw(ErrorException("Failed to load after 3 attempts")); end
-        
-        sleep(NAV_SLEEP_SEC)
-        folder_name = get_dashboard_name(page)
-        scroll_page(page)
-        return extract_and_parse(page, folder_name)
-        
-    catch e
-        @error "Failed to process $url: $e"
-        return WidgetTable[]
+    success = false
+    for attempt in 1:3
+        try
+            ChromeDevToolsLite.goto(page, url)
+            success = true; break
+        catch e; sleep(5); end
     end
+    if !success; throw(ErrorException("Failed to load")); end
+    
+    sleep(NAV_SLEEP_SEC)
+    folder_name = get_dashboard_name(page)
+    scroll_page(page)
+    return extract_and_parse(page, folder_name)
 end
 
 function main()
     mkpath(OUTPUT_ROOT)
     try
-        @info "🔌 Connecting to Chrome..."
+        @info "🔌 Connecting..."
         page = ChromeDevToolsLite.connect_browser()
-        
         @sync begin
             for url in TARGET_URLS
                 widgets = process_url(page, url)
                 if !isempty(widgets)
                     for w in widgets
-                        # 🛡️ ASYNC SAFETY WRAPPER
-                        # Prevents "TaskFailedException" from crashing everything
-                        @async begin
-                            try
-                                save_widget(w)
-                            catch e
-                                @error "Failed to save widget $(w.clean_name): $e"
-                            end
-                        end
+                        @async try save_widget(w) catch e; @error "Save failed: $e"; end
                     end
                 end
             end
         end
-        @info "🎉 Scrape Cycle Complete."
+        @info "🎉 Scrape Complete."
     catch e
         @error "Crash" exception=(e, catch_backtrace())
         exit(1)
