@@ -1,4 +1,4 @@
-using ChromeDevToolsLite, DataFrames, CSV, Dates, JSON, Printf, Mustache
+using ChromeDevToolsLite, DataFrames, CSV, Dates, JSON, Printf, Mustache, Gumbo, Cascadia
 
 # ==============================================================================
 # 1. 🛠️ CORE UTILS
@@ -16,9 +16,14 @@ module Utils
 
     function clean_header(h::String)
         # Aggressive cleaning of "Sort table by..." artifacts
-        h = replace(h, r"(?i)(Sort\s*(table|tab).*)" => "")
+        h = replace(h, r"(?i)Sort\s*(table|tab|column)\s*by.*" => "")
         h = replace(h, r"[^a-zA-Z0-9%\.]" => "")
         return strip(h)
+    end
+    
+    function clean_text(s::String)
+        s = replace(s, r"\s+" => " ")
+        return strip(s)
     end
 
     macro retry(n, delay, expr)
@@ -49,11 +54,11 @@ module Config
 end
 
 # ==============================================================================
-# 3. 🕸️ SCRAPER
+# 3. 🕸️ SCRAPER (PURE JULIA EDITION)
 # ==============================================================================
 module Scraper
     using ..Utils, ..Config
-    using ChromeDevToolsLite, DataFrames, CSV, Dates, JSON
+    using ChromeDevToolsLite, DataFrames, CSV, Dates, JSON, Gumbo, Cascadia
 
     struct Widget
         dashboard::String
@@ -62,123 +67,129 @@ module Scraper
         data::DataFrame
     end
 
-    # 🔥 TITLE EXTRACTOR v4 (The "Sniper")
-    const EXTRACTOR_JS = """
-    (() => {
-        const clean = t => t ? t.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
-        let csv = [];
-        let seenTitles = {};
+    # ✅ Validator: Discard junk titles
+    function is_valid_title(t::String)
+        length(t) < 2 && return false
+        length(t) > 100 && return false
+        low = lowercase(t)
+        startswith(low, "note") && return false
+        startswith(low, "disclaimer") && return false
+        occursin("delayed", low) && return false
+        occursin("generated", low) && return false
+        return true
+    end
 
-        const isValidTitle = (t) => {
-            if (!t || t.length < 2 || t.length > 80) return false;
-            const lower = t.toLowerCase();
-            if (lower.startsWith("note")) return false;
-            if (lower.startsWith("disclaimer")) return false;
-            if (lower.includes("delayed")) return false;
-            if (lower.includes("generated")) return false;
-            return true;
-        };
-
-        const findTitle = (node) => {
-            // Strategy 1: Look for explicit Chartink widget containers
-            let container = node.closest('.card, .widget, .panel, .box, .portlet');
-            if(container) {
-                // Try to find the header inside this container
-                let candidates = container.querySelectorAll('.card-header, .panel-heading, .widget-header, .portlet-title, h3, h4, .caption');
-                for (let c of candidates) {
-                    if (isValidTitle(c.innerText)) return c.innerText;
-                }
-            }
-
-            // Strategy 2: Walk backwards in the DOM tree (The "Scanner")
-            let curr = node;
-            let depth = 0;
-            while(curr && depth++ < 25) {
-                let sib = curr.previousElementSibling;
-                while(sib) {
-                    // Check the sibling itself
-                    if ((/H[1-6]|B|STRONG/.test(sib.tagName) || sib.classList.contains('font-bold')) && isValidTitle(sib.innerText)) {
-                        return sib.innerText;
-                    }
-                    
-                    // Check children of the sibling (e.g., a div containing an h3)
-                    let inner = sib.querySelector('h1, h2, h3, h4, b, strong, .card-title, .caption-subject');
-                    if(inner && isValidTitle(inner.innerText)) return inner.innerText;
-                    
-                    sib = sib.previousElementSibling;
-                }
-                curr = curr.parentElement;
-                if (!curr || curr.tagName === 'BODY') break;
-            }
-            return "Unknown_Widget";
-        };
-
-        const processTable = (table, rawTitle) => {
-            let baseTitle = clean(rawTitle);
+    # ✅ Helper: Smart Title Hunter
+    function hunt_title(table_node::HTMLNode)
+        curr = table_node
+        # Walk up the tree to find the container Card
+        for _ in 1:10
+            parent = getattr(curr, "parent", nothing)
+            if isnothing(parent) || !isa(parent, HTMLElement); break; end
             
-            // If title is bad, hunt for a new one
-            if (!baseTitle || baseTitle.includes("Misc_Table") || !isValidTitle(baseTitle)) {
-                 baseTitle = clean(findTitle(table));
-            }
+            # 1. Check if Parent is a Card/Widget
+            if haskey(parent.attributes, "class")
+                cls = parent.attributes["class"]
+                if occursin("card", cls) || occursin("portlet", cls) || occursin("widget", cls)
+                    # Look for the header INSIDE this card
+                    headers = eachmatch(Selector(".card-header, .portlet-title, .widget-header, h3, h4"), parent)
+                    for h in headers
+                        htxt = Utils.clean_text(nodeText(h))
+                        if is_valid_title(htxt); return htxt; end
+                    end
+                end
+            end
 
-            // Fallback: Use First Column Header (Last Resort)
-            if ((!baseTitle || baseTitle.includes("Unknown")) && table.rows.length > 0) {
-                 const firstTh = table.querySelector("th");
-                 if(firstTh) {
-                    let txt = clean(firstTh.innerText).replace(/sort.*by/i, "").trim();
-                    if(txt.length > 2) baseTitle = "Widget_" + txt.substring(0, 15);
-                    else baseTitle = "Widget_" + Math.floor(Math.random() * 1000);
-                 }
-            }
+            # 2. Check Previous Siblings of the current node
+            # (Gumbo stores siblings in the parent's children array)
+            siblings = parent.children
+            idx = findfirst(==(curr), siblings)
+            if !isnothing(idx)
+                for i in (idx-1):-1:1
+                    sib = siblings[i]
+                    if !isa(sib, HTMLElement); continue; end
+                    
+                    # Direct Heading Sibling?
+                    tag_name = uppercase(string(tag(sib)))
+                    if tag_name in ["H1","H2","H3","H4","B","STRONG"]
+                        txt = Utils.clean_text(nodeText(sib))
+                        if is_valid_title(txt); return txt; end
+                    end
+                    
+                    # Nested Heading? (e.g. div > h3)
+                    nested_headers = eachmatch(Selector("h1, h2, h3, h4, b, strong, .card-title"), sib)
+                    for nh in nested_headers
+                        ntxt = Utils.clean_text(nodeText(nh))
+                        if is_valid_title(ntxt); return ntxt; end
+                    end
+                end
+            end
+            
+            curr = parent
+        end
+        return "Unknown_Widget"
+    end
 
-            // 🧼 Final Clean: Remove "Sort table by" from the title itself if it leaked in
-            baseTitle = baseTitle.replace(/Sort\\s*table\\s*by.*/i, "").trim();
-            baseTitle = baseTitle.replace(/Sort\\s*tab.*/i, "").trim();
-
-            if (seenTitles[baseTitle]) {
-                seenTitles[baseTitle]++;
-                baseTitle = baseTitle + "_" + seenTitles[baseTitle];
-            } else {
-                seenTitles[baseTitle] = 1;
-            }
-
-            const rows = table.querySelectorAll("tr");
-            rows.forEach(row => {
-                if(row.innerText.includes("No data")) return;
-                const cells = Array.from(row.querySelectorAll("th, td"));
-                if(cells.length < 2) return;
-                
-                const rowStr = cells.map(c => '"' + clean(c.innerText) + '"').join(",");
-                csv.push('"' + baseTitle + '",' + rowStr);
-            });
-        };
-
-        // Main Loop
-        document.querySelectorAll("table").forEach(table => {
-            // Check specific card header first (High Confidence)
-            let card = table.closest('.card, .portlet');
-            let initialTitle = "";
-            if(card) {
-                let h = card.querySelector(".card-header, .portlet-title");
-                if(h) initialTitle = h.innerText;
-            }
-            processTable(table, initialTitle);
-        });
+    function extract_table_data(table_node::HTMLElement)
+        rows = eachmatch(Selector("tr"), table_node)
+        if isempty(rows); return DataFrame(); end
         
-        return csv.join("\\n");
-    })()
-    """
+        # Extract headers
+        header_cells = eachmatch(Selector("th, td"), rows[1])
+        if isempty(header_cells); return DataFrame(); end
+        
+        col_names = [Utils.clean_text(nodeText(c)) for c in header_cells]
+        col_names = map(Utils.clean_header, col_names)
+        
+        # Init DataFrame
+        df = DataFrame()
+        for col in col_names
+            safe_col = col
+            c = 1
+            while safe_col in names(df) || isempty(safe_col)
+                safe_col = isempty(col) ? "Col_$c" : "$(col)_$c"
+                c += 1
+            end
+            df[!, safe_col] = String[]
+        end
+        
+        ts = Utils.get_ist()
+        
+        # Process Data Rows
+        for i in 2:length(rows)
+            cells = eachmatch(Selector("td, th"), rows[i])
+            if length(cells) < length(col_names); continue; end
+            
+            row_data = Dict{String, Any}()
+            skip_row = false
+            
+            for (j, cell) in enumerate(cells)
+                if j > length(col_names); break; end
+                txt = Utils.clean_text(nodeText(cell))
+                
+                # Skip rows that repeat headers
+                if j == 1 && txt == col_names[1]; skip_row = true; break; end
+                if occursin("No data", txt); skip_row = true; break; end
+                
+                row_data[names(df)[j]] = txt
+            end
+            
+            if !skip_row; push!(df, row_data); end
+        end
+        
+        insertcols!(df, 1, :Timestamp => fill(string(ts), nrow(df)))
+        return df
+    end
 
-    function is_valid(df::DataFrame)
-        nrow(df) > 0 && ncol(df) >= 2 && !occursin(r"(#|\*|Clause)", string(df[1,1]))
+    function is_valid_df(df::DataFrame)
+        nrow(df) > 0 && ncol(df) >= 3 
     end
 
     function get_dashboard_name(page)
         raw = ChromeDevToolsLite.evaluate(page, "document.title")
         val = isa(raw, Dict) ? raw["value"] : raw
         clean = replace(val, r"(?i)\s*-\s*Chartink.*" => "")
-        clean = Utils.clean_filename(clean)
-        return isempty(clean) ? "Unknown_Dashboard" : clean
+        return Utils.clean_filename(clean)
     end
 
     function process_page(page, url)
@@ -189,58 +200,40 @@ module Scraper
         sleep(8) 
         
         dash_folder = get_dashboard_name(page)
-        @info "📂 Dashboard Detected: $dash_folder"
+        @info "📂 Dashboard: $dash_folder"
 
+        # Scroll
         h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight")
         h_val = isa(h, Dict) ? h["value"] : h
         for s in 0:1000:h_val
             ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)")
-            sleep(0.5) 
+            sleep(0.2) 
         end
         sleep(2)
 
-        raw_res = ChromeDevToolsLite.evaluate(page, EXTRACTOR_JS)
-        raw_csv = isa(raw_res, Dict) ? raw_res["value"] : raw_res
-        
-        if isempty(raw_csv); return Widget[]; end
+        # 📥 HTML Parsing
+        html_content = ChromeDevToolsLite.evaluate(page, "document.documentElement.outerHTML")
+        html_str = isa(html_content, Dict) ? html_content["value"] : html_content
+        dom = parsehtml(html_str)
+        tables = eachmatch(Selector("table"), dom.root)
         
         widgets = Widget[]
-        rows = split(raw_csv, "\n")
-        grouped = Dict{String, Vector{String}}()
-        
-        for r in rows
-            m = match(r"^\"([^\"]+)\"", r)
-            k = isnothing(m) ? "Unknown" : m.captures[1]
-            push!(get!(grouped, k, String[]), r)
-        end
+        seen_titles = Dict{String, Int}()
 
-        for (title, lines) in grouped
-            clean_lines = map(l -> replace(l, r"^\"[^\"]+\"," => ""), lines)
-            header_idx = findfirst(l -> occursin(r"\"(Symbol|Name|Date|Scan Name)\"", l), clean_lines)
-            if isnothing(header_idx) && length(clean_lines) > 0; header_idx = 1; end
-            isnothing(header_idx) && continue
-
-            raw_header = clean_lines[header_idx]
-            cleaned_header = replace(raw_header, r"(?i)Sort\s*table\s*by[^,\"]*" => "")
+        for t in tables
+            title = hunt_title(t)
+            df = extract_table_data(t)
             
-            io = IOBuffer()
-            println(io, "\"Timestamp\"," * cleaned_header)
-            ts = Utils.get_ist()
-            for i in (header_idx+1):length(clean_lines)
-                if clean_lines[i] != raw_header
-                    println(io, "\"$ts\"," * clean_lines[i])
+            if is_valid_df(df)
+                if haskey(seen_titles, title)
+                    seen_titles[title] += 1
+                    title = "$(title)_$(seen_titles[title])"
+                else
+                    seen_titles[title] = 1
                 end
-            end
-            
-            try
-                seekstart(io)
-                df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
-                if is_valid(df)
-                    clean_id = Utils.clean_filename(title)
-                    push!(widgets, Widget(dash_folder, title, clean_id, df))
-                end
-            catch e
-                @warn "Parsing failed: $title"
+                
+                clean_id = Utils.clean_filename(title)
+                push!(widgets, Widget(dash_folder, title, clean_id, df))
             end
         end
         return widgets
@@ -261,7 +254,6 @@ module Dashboard
     using ..Utils, ..Config, ..Scraper
     using DataFrames, CSV, Printf, Mustache
 
-    # 🔥 FLEXIBLE RULES (Catch spacing variations like "4.5 r")
     const RULES = [
         (r"(?i)4\.5\s*r",          v -> v > 400 ? "background:#f1c40f80" : v >= 200 ? "background:#2ecc7180" : v < 50 ? "background:#e74c3c80" : ""),
         (r"(?i)(4\.5|20|50)\s*chg",v -> v < -20 ? "background:#e74c3c80" : v > 20   ? "background:#2ecc7180" : ""),
@@ -303,9 +295,9 @@ module Dashboard
         headers = names(df)
         safe_headers = map(Utils.clean_header, headers)
         
-        # 🔥 FIX: Ensure ID is clean and class is forced
         io = IOBuffer()
-        print(io, "<div style='overflow-x:auto'><table id='$id' class='display compact stripe nowrap' style='width:100%'><thead><tr>")
+        # 🔥 Force DataTables classes: display compact stripe nowrap
+        print(io, "<table id='$id' class='display compact stripe nowrap' style='width:100%'><thead><tr>")
         foreach(h -> print(io, "<th>$h</th>"), safe_headers)
         print(io, "</tr></thead><tbody>")
         
@@ -313,12 +305,18 @@ module Dashboard
             print(io, "<tr>")
             for (col, val) in pairs(row)
                 sty = get_style(col, val)
-                fmt = val isa Real ? @sprintf("%.2f", val) : ismissing(val) ? "-" : val
+                raw_val = ismissing(val) ? "-" : val
+                fmt = raw_val
+                if raw_val isa Real
+                     fmt = @sprintf("%.2f", raw_val)
+                elseif raw_val isa String && tryparse(Float64, raw_val) !== nothing
+                     fmt = @sprintf("%.2f", parse(Float64, raw_val))
+                end
                 print(io, "<td style='$sty'>$fmt</td>")
             end
             print(io, "</tr>")
         end
-        print(io, "</tbody></table></div>")
+        print(io, "</tbody></table>")
         return String(take!(io))
     end
 
