@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chartink Pro</title>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/fixedcolumns/4.2.2/css/fixedColumns.dataTables.min.css">
+    <style>
+        /* Dark Mode Theme */
+        body { font-family: -apple-system, sans-serif; background: #121212; color: #e0e0e0; padding: 10px; }
+        .card { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 10px; margin-bottom: 20px; overflow: hidden; }
+        h3 { color: #bb86fc; border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 0; }
+        .ts { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
+        
+        /* Sticky Headers & Columns */
+        table.dataTable thead th { background: #2c2c2c !important; color: #fff; position: sticky; top: 0; z-index: 100; }
+        table.dataTable tbody tr td:first-child { position: sticky; left: 0; z-index: 50; border-right: 2px solid #444; font-weight: 500; }
+        
+        /* Striped Rows (Matching Sticky Column) */
+        table.dataTable tbody tr.even, table.dataTable tbody tr.even td:first-child { background: #1e1e1e !important; }
+        table.dataTable tbody tr.odd, table.dataTable tbody tr.odd td:first-child { background: #2a2a2a !important; }
+        
+        /* Cell Formatting */
+        table.dataTable td { white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; padding: 8px 10px; border-bottom: 1px solid #333; }
+        
+        /* Resizable Scroll Area */
+        .dataTables_scrollBody { resize: vertical !important; border-bottom: 3px solid #444; min-height: 200px; }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/fixedcolumns/4.2.2/js/dataTables.fixedColumns.min.js"></script>
+</head>
+<body>
+    <div style="text-align:center"><h1>📊 Market Dashboard</h1><div class="ts">Last Updated: {{time}}</div></div>
+    
+    {{#tables}}
+    <div class="card">
+        <h3>{{title}}</h3>
+        {{{content}}} 
+    </div>
+    <script>
+        $(document).ready(() => {
+            $.fn.dataTable.ext.errMode = 'none';
+            if(document.getElementById('{{id}}')) {
+                try { 
+                    $('#{{id}}').DataTable({ 
+                        paging: false, 
+                        info: false, 
+                        scrollX: true, 
+                        scrollY: '50vh', 
+                        scrollCollapse: true, 
+                        fixedColumns: {left: 1}, 
+                        stripeClasses: ['odd','even'] 
+                    }); 
+                } catch(e){}
+            }
+        });
+    </script>
+    {{/tables}}
+</body>
+</html>
