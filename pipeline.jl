@@ -61,44 +61,47 @@ module Scraper
         data::DataFrame
     end
 
-    # 🔥 NUCLEAR TITLE EXTRACTOR v2
+    # 🔥 TITLE EXTRACTOR v3 (Smart Filter)
     const EXTRACTOR_JS = """
     (() => {
         const clean = t => t ? t.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         let csv = [];
         let seenTitles = {};
 
+        const isValidTitle = (t) => {
+            if (!t || t.length < 2 || t.length > 100) return false;
+            const lower = t.toLowerCase();
+            // 🚫 IGNORE JUNK TITLES
+            if (lower.startsWith("note")) return false;
+            if (lower.startsWith("disclaimer")) return false;
+            if (lower.includes("delayed")) return false;
+            return true;
+        };
+
         const findTitle = (node) => {
-            // Strategy 1: Look for specific Chartink header classes in parent containers
-            let container = node.closest('.card, .widget, .panel, .box, .portlet');
+            // Strategy 1: Look for Chartink specific headers
+            let container = node.closest('.card, .widget, .panel, .box');
             if(container) {
-                let h = container.querySelector('.card-header, .panel-heading, .portlet-title, .widget-header, h3, h4');
-                if(h && h.innerText.trim().length > 2) return h.innerText;
+                let h = container.querySelector('.card-header, .panel-heading, .widget-header, h3, h4');
+                if(h && isValidTitle(h.innerText)) return h.innerText;
             }
 
-            // Strategy 2: Walk backwards finding ANY significant text
+            // Strategy 2: Walk backwards
             let curr = node;
             let depth = 0;
             while(curr && depth++ < 20) {
                 let sib = curr.previousElementSibling;
                 while(sib) {
-                    // Is this a header?
-                    if (/H[1-6]/.test(sib.tagName)) return sib.innerText;
+                    if (/H[1-6]/.test(sib.tagName) && isValidTitle(sib.innerText)) return sib.innerText;
                     
-                    // Is this a bold tag with text?
-                    if ((/B|STRONG/.test(sib.tagName) || sib.classList.contains('font-bold')) && sib.innerText.length > 3) {
-                        return sib.innerText;
+                    // Bold text that is NOT a Note
+                    if ((/B|STRONG/.test(sib.tagName) || sib.classList.contains('font-bold'))) {
+                        if (isValidTitle(sib.innerText)) return sib.innerText;
                     }
-                    
-                    // Does it look like a header div?
-                    if (sib.innerText.length > 3 && sib.innerText.length < 100 && 
-                       (sib.className.includes('title') || sib.className.includes('header') || getComputedStyle(sib).fontWeight > 500)) {
-                        return sib.innerText;
-                    }
-                    
-                    // Check inside the sibling
-                    let inner = sib.querySelector('h1, h2, h3, h4, strong, b, .card-title, .caption-subject');
-                    if(inner && inner.innerText.length > 2) return inner.innerText;
+
+                    // Check inside sibling
+                    let inner = sib.querySelector('h1, h2, h3, h4, strong, b, .card-title');
+                    if(inner && isValidTitle(inner.innerText)) return inner.innerText;
                     
                     sib = sib.previousElementSibling;
                 }
@@ -111,12 +114,12 @@ module Scraper
         const processTable = (table, rawTitle) => {
             let baseTitle = clean(rawTitle);
             
-            // If explicit title failed, hunt for it
-            if (!baseTitle || baseTitle.includes("Misc_Table") || baseTitle.includes("Unknown")) {
+            // If invalid, hunt for better one
+            if (!baseTitle || baseTitle.includes("Misc_Table") || !isValidTitle(baseTitle)) {
                  baseTitle = clean(findTitle(table));
             }
 
-            // Fallback: If still unknown, use the first column header as a hint
+            // Fallback: Use Column Header if absolutely nothing else found
             if ((!baseTitle || baseTitle.includes("Unknown")) && table.rows.length > 0) {
                  const firstTh = table.querySelector("th");
                  if(firstTh) baseTitle = "Widget_" + clean(firstTh.innerText).substring(0, 15);
@@ -144,11 +147,10 @@ module Scraper
 
         // Main Loop
         document.querySelectorAll("table").forEach(table => {
-            // Check specific card header first (High Confidence)
-            let card = table.closest('.card, .portlet');
             let initialTitle = "";
+            let card = table.closest('.card, .portlet');
             if(card) {
-                let h = card.querySelector(".card-header, .portlet-title, .caption");
+                let h = card.querySelector(".card-header, .portlet-title");
                 if(h) initialTitle = h.innerText;
             }
             processTable(table, initialTitle);
@@ -250,17 +252,18 @@ module Dashboard
     using ..Utils, ..Config, ..Scraper
     using DataFrames, CSV, Printf, Mustache
 
+    # 🔥 UPDATED RULES: Case Insensitive (?i) and Flexible
     const RULES = [
-        (r"4\.5r",          v -> v > 400 ? "background:#f1c40f80" : v >= 200 ? "background:#2ecc7180" : v < 50 ? "background:#e74c3c80" : ""),
-        (r"(4\.5|20|50)chg",v -> v < -20 ? "background:#e74c3c80" : v > 20   ? "background:#2ecc7180" : ""),
-        (r"20r",            v -> v < 50  ? "background:#e74c3c80" : v > 75   ? "background:#2ecc7180" : ""),
-        (r"50r",            v -> v < 60  ? "background:#e74c3c80" : v > 85   ? "background:#2ecc7180" : "")
+        (r"(?i)4\.5\s*r",          v -> v > 400 ? "background:#f1c40f80" : v >= 200 ? "background:#2ecc7180" : v < 50 ? "background:#e74c3c80" : ""),
+        (r"(?i)(4\.5|20|50)\s*chg",v -> v < -20 ? "background:#e74c3c80" : v > 20   ? "background:#2ecc7180" : ""),
+        (r"(?i)20\s*r",            v -> v < 50  ? "background:#e74c3c80" : v > 75   ? "background:#2ecc7180" : ""),
+        (r"(?i)50\s*r",            v -> v < 60  ? "background:#e74c3c80" : v > 85   ? "background:#2ecc7180" : "")
     ]
 
     function get_style(col, val)
         v = tryparse(Float64, string(val))
         isnothing(v) && return ""
-        c = replace(lowercase(string(col)), " " => "")
+        c = replace(string(col), " " => "") # Keep casing but strip spaces
         for (p, f) in RULES; occursin(p, c) && return f(v); end
         return ""
     end
@@ -291,6 +294,7 @@ module Dashboard
         headers = names(df)
         safe_headers = map(Utils.clean_header, headers)
         
+        # 🔥 FORCE MODERN CLASSES
         io = IOBuffer()
         print(io, "<table id='$id' class='display compact stripe nowrap' style='width:100%'><thead><tr>")
         foreach(h -> print(io, "<th>$h</th>"), safe_headers)
@@ -319,7 +323,6 @@ module Dashboard
         for (dash_name, dash_widgets) in grouped_widgets
             for w in dash_widgets
                 save_history(w)
-                # Prefix Title with Dashboard Name for clarity
                 display_title = "$dash_name / $(w.name)"
                 unique_id = "tbl_" * Utils.clean_filename(dash_name) * "_" * w.clean_name
                 
@@ -334,7 +337,7 @@ module Dashboard
         tpl = read(Config.TEMPLATE_FILE, String)
         out = Mustache.render(tpl, Dict("time" => Utils.fmt_ist(Utils.get_ist()), "tables" => view_data))
         write(joinpath(Config.PUBLIC_DIR, "index.html"), out)
-        @info "✅ Built $(length(widgets)) tables across $(length(grouped_widgets)) dashboards."
+        @info "✅ Built tables."
     end
 end
 
