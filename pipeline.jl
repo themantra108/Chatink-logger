@@ -15,7 +15,6 @@ module Utils
     end
 
     function clean_header(h::AbstractString)
-        # Kill "Sort table by..." and all its variants
         h = replace(h, r"(?i)Sort\s*(table|tab|column).*$" => "")
         h = replace(h, r"[^a-zA-Z0-9%\.]" => "")
         return strip(h)
@@ -75,18 +74,19 @@ module Scraper
         startswith(low, "disclaimer") && return false
         occursin("delayed", low) && return false
         occursin("generated", low) && return false
-        # If it contains "Sort table by", it's garbage
         occursin("sort table", low) && return false
         return true
     end
 
     function hunt_title(table_node::HTMLNode)
         curr = table_node
+        
+        # 🔍 Search Upwards (Parent -> Grandparent -> Great Grandparent)
         for _ in 1:15
             parent = getattr(curr, "parent", nothing)
             if isnothing(parent) || !isa(parent, HTMLElement); break; end
             
-            # 1. Check Container Classes (Card/Portlet)
+            # 1. IMMEDIATE CHECK: Is the parent a Card/Portlet with a Header?
             if haskey(parent.attributes, "class")
                 cls = parent.attributes["class"]
                 if occursin("card", cls) || occursin("portlet", cls) || occursin("widget", cls)
@@ -98,35 +98,36 @@ module Scraper
                 end
             end
 
-            # 2. Check Previous Siblings (Aggressive Text Scan)
+            # 2. SIBLING CHECK: Look at the Previous Sibling of the current container
             siblings = parent.children
             idx = findfirst(==(curr), siblings)
             if !isnothing(idx)
+                # Iterate backwards through previous siblings
                 for i in (idx-1):-1:1
                     sib = siblings[i]
                     if !isa(sib, HTMLElement); continue; end
                     
-                    # Check the sibling text directly
-                    # If it's a Header tag OR Bold tag OR just a Div/Span with text
+                    # Direct Text Match (H3, Bold, etc.)
                     tag_name = uppercase(string(tag(sib)))
-                    
-                    if tag_name in ["H1","H2","H3","H4","B","STRONG","DIV","SPAN","P"]
+                    if tag_name in ["H1","H2","H3","H4","B","STRONG","DIV","P","SPAN"]
                         txt = Utils.clean_text(nodeText(sib))
                         if is_valid_title(txt)
-                            # Extra check: If it's a P/Div/Span, ensure it looks like a title (short, capitalized)
-                            if tag_name in ["DIV","SPAN","P"] && length(txt) > 50; continue; end
+                            if tag_name in ["DIV","P","SPAN"] && length(txt) > 50; continue; end
                             return txt
                         end
                     end
                     
-                    # Check inside the sibling
-                    nested_headers = eachmatch(Selector("h1, h2, h3, h4, b, strong, .card-title, .caption-subject"), sib)
+                    # 🎯 DEEP DIVE: Check *inside* the sibling (The "Cousin" Fix)
+                    # This finds a header buried inside a previous row/column
+                    nested_headers = eachmatch(Selector("h1, h2, h3, h4, b, strong, .card-title, .caption-subject, .scan_name"), sib)
                     for nh in nested_headers
                         ntxt = Utils.clean_text(nodeText(nh))
                         if is_valid_title(ntxt); return ntxt; end
                     end
                 end
             end
+            
+            # Move up the tree
             curr = parent
         end
         return "Unknown_Widget"
@@ -166,7 +167,6 @@ module Scraper
                 if j > length(col_names); break; end
                 txt = Utils.clean_text(nodeText(cell))
                 
-                # Filter out junk rows
                 if j == 1 && txt == col_names[1]; skip_row = true; break; end
                 if occursin("No data", txt); skip_row = true; break; end
                 
