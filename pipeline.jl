@@ -54,16 +54,44 @@ module Scraper
         data::DataFrame
     end
 
-    # 🔥 IMPROVED JS: Ensures unique names for every table
+    # 🔥 SMART EXTRACTOR: Hunts for titles if they are missing
     const EXTRACTOR_JS = """
     (() => {
         const clean = t => t ? t.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         let csv = [];
         let seenTitles = {};
 
+        // Helper: Look backwards for a header tag
+        const findNearestHeader = (node) => {
+            let curr = node;
+            let limit = 0;
+            while(curr && limit++ < 5) {
+                let sib = curr.previousElementSibling;
+                while(sib) {
+                    // Check for H tags or Bold text that looks like a title
+                    if (/H[1-6]|B|STRONG/.test(sib.tagName) && sib.innerText.length > 3) {
+                        return sib.innerText;
+                    }
+                    if (sib.classList.contains('card-header')) {
+                        return sib.innerText;
+                    }
+                    sib = sib.previousElementSibling;
+                }
+                curr = curr.parentElement;
+                if (!curr || curr.tagName === 'BODY') break;
+            }
+            return "Untitled_Widget";
+        };
+
         const processTable = (table, rawTitle) => {
-            // 1. Generate Unique Title
-            let baseTitle = clean(rawTitle) || "Unknown_Widget";
+            let baseTitle = clean(rawTitle);
+            
+            // If we still have a generic title, try to find a better one
+            if (!baseTitle || baseTitle.includes("Misc_Table") || baseTitle.includes("Untitled")) {
+                 baseTitle = clean(findNearestHeader(table));
+            }
+
+            // Ensure Uniqueness
             if (seenTitles[baseTitle]) {
                 seenTitles[baseTitle]++;
                 baseTitle = baseTitle + "_" + seenTitles[baseTitle];
@@ -71,44 +99,37 @@ module Scraper
                 seenTitles[baseTitle] = 1;
             }
 
-            // 2. Extract Rows
             const rows = table.querySelectorAll("tr");
             rows.forEach(row => {
                 if(row.innerText.includes("No data")) return;
-                
                 const cells = Array.from(row.querySelectorAll("th, td"));
-                if(cells.length < 2) return; // Skip empty/malformed rows
+                if(cells.length < 2) return;
                 
-                // Check for hidden columns (DataTables often duplicates headers)
-                // We only want visible text
-                const rowStr = cells.map(c => {
-                    return '"' + clean(c.innerText) + '"';
-                }).join(",");
-                
+                const rowStr = cells.map(c => '"' + clean(c.innerText) + '"').join(",");
                 csv.push('"' + baseTitle + '",' + rowStr);
             });
         };
 
-        // Strategy A: Find Chartink 'Cards' (Most Reliable)
+        // Strategy A: Standard Cards
         document.querySelectorAll("div.card").forEach(card => {
             const header = card.querySelector(".card-header");
             const table = card.querySelector("table");
             if (table) {
-                // If header exists, use it. Otherwise look for h3/h4 inside.
                 let title = header ? header.innerText : "";
                 if(!title) {
                     const h = card.querySelector("h1,h2,h3,h4,h5");
                     if(h) title = h.innerText;
                 }
                 processTable(table, title);
-                table.setAttribute("data-scraped", "true"); // Mark as done
+                table.setAttribute("data-scraped", "true");
             }
         });
 
-        // Strategy B: Cleanup any loose tables not in cards
+        // Strategy B: Loose Tables (Title Hunter)
         document.querySelectorAll("table").forEach(table => {
             if(!table.hasAttribute("data-scraped")) {
-                processTable(table, "Misc_Table");
+                // Instead of "Misc_Table", we now hunt for the title!
+                processTable(table, findNearestHeader(table));
             }
         });
         
@@ -117,7 +138,6 @@ module Scraper
     """
 
     function is_valid(df::DataFrame)
-        # Must have data, at least 2 cols, and not be a filter description
         nrow(df) > 0 && ncol(df) >= 2 && !occursin(r"(#|\*|Clause)", string(df[1,1]))
     end
 
@@ -128,15 +148,14 @@ module Scraper
         end
         sleep(8) 
         
-        # 📜 Slow Scroll to trigger all lazy widgets
+        # Scroll
         h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight")
         h_val = isa(h, Dict) ? h["value"] : h
-        # Slower scroll step (1000px) and longer sleep (0.5s)
         for s in 0:1000:h_val
             ChromeDevToolsLite.evaluate(page, "window.scrollTo(0, $s)")
             sleep(0.5) 
         end
-        sleep(2) # Final settle
+        sleep(2)
 
         raw_res = ChromeDevToolsLite.evaluate(page, EXTRACTOR_JS)
         raw_csv = isa(raw_res, Dict) ? raw_res["value"] : raw_res
@@ -147,7 +166,6 @@ module Scraper
         rows = split(raw_csv, "\n")
         grouped = Dict{String, Vector{String}}()
         
-        # Group raw CSV lines by Title
         for r in rows
             m = match(r"^\"([^\"]+)\"", r)
             k = isnothing(m) ? "Unknown" : m.captures[1]
@@ -155,30 +173,18 @@ module Scraper
         end
 
         for (title, lines) in grouped
-            # Remove title column to get pure CSV data for this widget
             clean_lines = map(l -> replace(l, r"^\"[^\"]+\"," => ""), lines)
-            
-            # Find the Header Row (Contains "Symbol" or "Name")
             header_idx = findfirst(l -> occursin(r"\"(Symbol|Name|Date|Scan Name)\"", l), clean_lines)
-            
-            # If no obvious header, use the first row if it looks header-ish
-            if isnothing(header_idx) && length(clean_lines) > 0
-                header_idx = 1 
-            end
-            
+            if isnothing(header_idx) && length(clean_lines) > 0; header_idx = 1; end
             isnothing(header_idx) && continue
 
-            # Clean Header Row immediately
             raw_header = clean_lines[header_idx]
             cleaned_header = replace(raw_header, r"(?i)Sort\s*table\s*by[^,\"]*" => "")
             
             io = IOBuffer()
             println(io, "\"Timestamp\"," * cleaned_header)
             ts = Utils.get_ist()
-            
-            # Add data rows
             for i in (header_idx+1):length(clean_lines)
-                # Skip rows that just repeat headers (Chartink glitch)
                 if clean_lines[i] != raw_header
                     println(io, "\"$ts\"," * clean_lines[i])
                 end
@@ -192,7 +198,7 @@ module Scraper
                     push!(widgets, Widget(title, clean_id, df))
                 end
             catch e
-                @warn "Parsing failed for $title: $e"
+                @warn "Parsing failed: $title"
             end
         end
         return widgets
@@ -234,9 +240,7 @@ module Dashboard
         final_df = w.data
         if isfile(path)
             old_df = CSV.read(path, DataFrame)
-            # Remove old "junk" columns if they exist in history
             if "Column22" in names(old_df); select!(old_df, Not("Column22")); end
-            
             final_df = vcat(w.data, old_df, cols=:union)
             cols = intersect(["Timestamp", "Symbol", "Date"], names(final_df))
             !isempty(cols) && unique!(final_df, cols)
@@ -249,10 +253,8 @@ module Dashboard
     function df_to_html(df::DataFrame, id::String)
         "Timestamp" in names(df) && select!(df, Not("Timestamp"))
         "Col_1" in names(df) && rename!(df, "Col_1" => "Symbol")
-        
-        # Remove empty columns like "Column22"
         select!(df, Not(filter(n -> occursin(r"Column\d+", string(n)), names(df))))
-
+        
         headers = names(df)
         safe_headers = map(Utils.clean_header, headers)
         
@@ -277,16 +279,10 @@ module Dashboard
     function build(widgets::Vector{Scraper.Widget})
         mkpath(Config.PUBLIC_DIR)
         view_data = Dict{String, Any}[]
-        
         for w in widgets
             save_history(w)
-            push!(view_data, Dict(
-                "title" => w.name,
-                "id" => "tbl_" * w.clean_name,
-                "content" => df_to_html(w.data, "tbl_" * w.clean_name)
-            ))
+            push!(view_data, Dict("title" => w.name, "id" => "tbl_" * w.clean_name, "content" => df_to_html(w.data, "tbl_" * w.clean_name)))
         end
-        
         tpl = read(Config.TEMPLATE_FILE, String)
         out = Mustache.render(tpl, Dict("time" => Utils.fmt_ist(Utils.get_ist()), "tables" => view_data))
         write(joinpath(Config.PUBLIC_DIR, "index.html"), out)
