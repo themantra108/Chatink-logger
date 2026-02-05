@@ -2,7 +2,7 @@ using CSV, DataFrames, Dates, Printf
 using Mustache
 
 # ==============================================================================
-# 1. 📄 THE TEMPLATE (Striped & Rule-Based)
+# 1. 📄 THE TEMPLATE (Signal Strength Edition)
 # ==============================================================================
 const DASHBOARD_TEMPLATE = mt"""
 <!DOCTYPE html>
@@ -40,33 +40,23 @@ const DASHBOARD_TEMPLATE = mt"""
             top: 0;
         }
 
-        /* --- ALTERNATING ROW COLORS (ZEBRA STRIPING) --- */
-        
-        /* 1. Even Rows (Darker) */
-        table.dataTable tbody tr.even {
-            background-color: #1e1e1e !important; 
-        }
-        table.dataTable tbody tr.even td:first-child {
-            background-color: #1e1e1e !important; /* Sticky col matches row */
-        }
+        /* --- ZEBRA STRIPING --- */
+        table.dataTable tbody tr.even { background-color: #1e1e1e !important; }
+        table.dataTable tbody tr.odd { background-color: #2a2a2a !important; }
 
-        /* 2. Odd Rows (Lighter) */
-        table.dataTable tbody tr.odd {
-            background-color: #2a2a2a !important; 
-        }
-        table.dataTable tbody tr.odd td:first-child {
-            background-color: #2a2a2a !important; /* Sticky col matches row */
-        }
-
-        /* --- STICKY COLUMN POSITIONING --- */
+        /* --- STICKY FIRST COLUMN (Default State) --- */
+        /* Note: We will override this via inline styles if the Score is +/- 3 */
         table.dataTable tbody tr td:first-child {
             position: sticky;
             left: 0;
             z-index: 50;
-            border-right: 2px solid #444; /* Subtle separator */
+            border-right: 2px solid #444;
             color: #ffffff;
             font-weight: 500;
         }
+        /* Ensure sticky col matches row background by default */
+        table.dataTable tbody tr.even td:first-child { background-color: #1e1e1e; }
+        table.dataTable tbody tr.odd td:first-child { background-color: #2a2a2a; }
 
         /* --- CELL FORMATTING --- */
         table.dataTable td, table.dataTable th {
@@ -120,7 +110,7 @@ const DASHBOARD_TEMPLATE = mt"""
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -133,43 +123,70 @@ const DASHBOARD_TEMPLATE = mt"""
 """
 
 # ==============================================================================
-# 2. 🧠 COLOR RULES (Specific Only)
+# 2. 🧠 SCORING & COLOR LOGIC
 # ==============================================================================
+
+# Constants for Styling
 const COL_RED    = "background-color: rgba(231, 76, 60, 0.5); color: white;"
 const COL_GREEN  = "background-color: rgba(46, 204, 113, 0.5); color: white;"
 const COL_YELLOW = "background-color: rgba(241, 196, 15, 0.5); color: white;"
 
+# New: Strong Signal Colors (For the First Column)
+const SIGNAL_GREEN = "background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;"
+const SIGNAL_RED   = "background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;"
+
+# --- CALCULATE SCORE (+1, 0, -1) ---
+function get_metric_score(col_name::String, val)
+    num = tryparse(Float64, string(val))
+    if isnothing(num); return 0; end
+    
+    col = replace(lowercase(string(col_name)), " " => "")
+    
+    # 4.5r (Green 200-400, Red <50)
+    if occursin("4.5r", col)
+        if num >= 200 && num <= 400; return 1; end
+        if num < 50; return -1; end
+        
+    # Changes (Green > 20, Red < -20)
+    elseif any(x -> occursin(x, col), ["4.5chg", "20chg", "50chg"])
+        if num > 20; return 1; end
+        if num < -20; return -1; end
+        
+    # 20r (Green > 75, Red < 50)
+    elseif occursin("20r", col)
+        if num > 75; return 1; end
+        if num < 50; return -1; end
+        
+    # 50r (Green > 85, Red < 60)
+    elseif occursin("50r", col)
+        if num > 85; return 1; end
+        if num < 60; return -1; end
+    end
+    
+    return 0
+end
+
+# --- GET INDIVIDUAL CELL STYLE ---
 function get_cell_style(col_name::String, val)
     num = tryparse(Float64, string(val))
     if isnothing(num); return ""; end
 
     col = replace(lowercase(string(col_name)), " " => "")
 
-    # --- ONLY YOUR RULES BELOW ---
-    
-    # Rule: 4.5r
     if occursin("4.5r", col)
         if num > 400; return COL_YELLOW;
         elseif num >= 200; return COL_GREEN;
         elseif num < 50; return COL_RED; end
-
-    # Rule: Change Columns
     elseif any(x -> occursin(x, col), ["4.5chg", "20chg", "50chg"])
         if num < -20; return COL_RED;
         elseif num > 20; return COL_GREEN; end
-
-    # Rule: 20r
     elseif occursin("20r", col)
         if num < 50; return COL_RED;
         elseif num > 75; return COL_GREEN; end
-
-    # Rule: 50r
     elseif occursin("50r", col)
         if num < 60; return COL_RED;
         elseif num > 85; return COL_GREEN; end
     end
-    
-    # NO GENERIC FALLBACK -> Other cells stay transparent (showing stripe color)
     return ""
 end
 
@@ -188,12 +205,14 @@ function build_table_html(df::DataFrame, id::String)
     if "Timestamp" in names(df); select!(df, Not("Timestamp")); end
 
     io = IOBuffer()
-    # Note: 'stripe' class enables the CSS selectors we wrote above
     println(io, """<table id="$id" class="display compact stripe nowrap" style="width:100%">""")
     println(io, "<thead><tr>")
     
+    # Headers
     seen_headers = Set{String}()
-    for col in names(df)
+    col_names = names(df) # Store clean names for lookups
+    
+    for col in col_names
         base_name = replace(string(col), r"[^a-zA-Z0-9\s_\-\%\.]" => "")
         safe_col = base_name
         count = 1
@@ -208,10 +227,36 @@ function build_table_html(df::DataFrame, id::String)
     
     println(io, "<tbody>")
     for row in eachrow(df)
+        
+        # ---------------------------------------------------------
+        # 1. CALCULATE ROW SCORE (Sum of 1s and -1s)
+        # ---------------------------------------------------------
+        row_score = 0
+        for col in col_names
+            row_score += get_metric_score(string(col), row[col])
+        end
+        
         println(io, "<tr>")
-        for col in names(df)
+        
+        # ---------------------------------------------------------
+        # 2. RENDER CELLS (Apply Signal Color to First Column)
+        # ---------------------------------------------------------
+        for (i, col) in enumerate(col_names)
             val = row[col]
-            style = get_cell_style(string(col), val)
+            style = ""
+            
+            # Special Logic for First Column (Date/Symbol)
+            if i == 1
+                if row_score >= 3
+                    style = SIGNAL_GREEN
+                elseif row_score <= -3
+                    style = SIGNAL_RED
+                end
+            else
+                # Standard logic for other columns
+                style = get_cell_style(string(col), val)
+            end
+            
             clean_val = val isa Real ? @sprintf("%.2f", val) : val
             if ismissing(clean_val); clean_val = "-"; end
             println(io, "<td style='$style'>$clean_val</td>")
@@ -259,7 +304,7 @@ function main()
     ))
     
     open("public/index.html", "w") do io; write(io, final_html); end
-    println("✅ Dashboard generated (Striped Rows).")
+    println("✅ Dashboard generated with SIGNAL SCORES.")
 end
 
 main()
