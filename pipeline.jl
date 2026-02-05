@@ -8,20 +8,21 @@ module Utils
     get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
     fmt_ist(dt) = Dates.format(dt, "yyyy-mm-dd I:MM p") * " IST"
 
-    function clean_filename(s::String)
+    # 🔥 FIX: Use AbstractString to handle SubString (split/strip results)
+    function clean_filename(s::AbstractString)
         s = replace(s, r"[^a-zA-Z0-9\-\.]" => "_")
         s = replace(s, r"__+" => "_")
         return strip(s, '_')
     end
 
-    function clean_header(h::String)
+    function clean_header(h::AbstractString)
         # Aggressive cleaning of "Sort table by..." artifacts
         h = replace(h, r"(?i)Sort\s*(table|tab|column)\s*by.*" => "")
         h = replace(h, r"[^a-zA-Z0-9%\.]" => "")
         return strip(h)
     end
     
-    function clean_text(s::String)
+    function clean_text(s::AbstractString)
         s = replace(s, r"\s+" => " ")
         return strip(s)
     end
@@ -67,8 +68,7 @@ module Scraper
         data::DataFrame
     end
 
-    # ✅ Validator: Discard junk titles
-    function is_valid_title(t::String)
+    function is_valid_title(t::AbstractString)
         length(t) < 2 && return false
         length(t) > 100 && return false
         low = lowercase(t)
@@ -79,10 +79,8 @@ module Scraper
         return true
     end
 
-    # ✅ Helper: Smart Title Hunter
     function hunt_title(table_node::HTMLNode)
         curr = table_node
-        # Walk up the tree to find the container Card
         for _ in 1:10
             parent = getattr(curr, "parent", nothing)
             if isnothing(parent) || !isa(parent, HTMLElement); break; end
@@ -91,7 +89,6 @@ module Scraper
             if haskey(parent.attributes, "class")
                 cls = parent.attributes["class"]
                 if occursin("card", cls) || occursin("portlet", cls) || occursin("widget", cls)
-                    # Look for the header INSIDE this card
                     headers = eachmatch(Selector(".card-header, .portlet-title, .widget-header, h3, h4"), parent)
                     for h in headers
                         htxt = Utils.clean_text(nodeText(h))
@@ -100,8 +97,7 @@ module Scraper
                 end
             end
 
-            # 2. Check Previous Siblings of the current node
-            # (Gumbo stores siblings in the parent's children array)
+            # 2. Check Previous Siblings
             siblings = parent.children
             idx = findfirst(==(curr), siblings)
             if !isnothing(idx)
@@ -109,14 +105,14 @@ module Scraper
                     sib = siblings[i]
                     if !isa(sib, HTMLElement); continue; end
                     
-                    # Direct Heading Sibling?
+                    # Direct Heading
                     tag_name = uppercase(string(tag(sib)))
                     if tag_name in ["H1","H2","H3","H4","B","STRONG"]
                         txt = Utils.clean_text(nodeText(sib))
                         if is_valid_title(txt); return txt; end
                     end
                     
-                    # Nested Heading? (e.g. div > h3)
+                    # Nested Heading
                     nested_headers = eachmatch(Selector("h1, h2, h3, h4, b, strong, .card-title"), sib)
                     for nh in nested_headers
                         ntxt = Utils.clean_text(nodeText(nh))
@@ -124,7 +120,6 @@ module Scraper
                     end
                 end
             end
-            
             curr = parent
         end
         return "Unknown_Widget"
@@ -134,14 +129,14 @@ module Scraper
         rows = eachmatch(Selector("tr"), table_node)
         if isempty(rows); return DataFrame(); end
         
-        # Extract headers
         header_cells = eachmatch(Selector("th, td"), rows[1])
         if isempty(header_cells); return DataFrame(); end
         
-        col_names = [Utils.clean_text(nodeText(c)) for c in header_cells]
-        col_names = map(Utils.clean_header, col_names)
+        # Get raw text
+        raw_headers = [Utils.clean_text(nodeText(c)) for c in header_cells]
+        # Clean them (now works because Utils accepts AbstractString)
+        col_names = map(Utils.clean_header, raw_headers)
         
-        # Init DataFrame
         df = DataFrame()
         for col in col_names
             safe_col = col
@@ -155,7 +150,6 @@ module Scraper
         
         ts = Utils.get_ist()
         
-        # Process Data Rows
         for i in 2:length(rows)
             cells = eachmatch(Selector("td, th"), rows[i])
             if length(cells) < length(col_names); continue; end
@@ -167,7 +161,6 @@ module Scraper
                 if j > length(col_names); break; end
                 txt = Utils.clean_text(nodeText(cell))
                 
-                # Skip rows that repeat headers
                 if j == 1 && txt == col_names[1]; skip_row = true; break; end
                 if occursin("No data", txt); skip_row = true; break; end
                 
@@ -202,7 +195,6 @@ module Scraper
         dash_folder = get_dashboard_name(page)
         @info "📂 Dashboard: $dash_folder"
 
-        # Scroll
         h = ChromeDevToolsLite.evaluate(page, "document.body.scrollHeight")
         h_val = isa(h, Dict) ? h["value"] : h
         for s in 0:1000:h_val
@@ -211,7 +203,6 @@ module Scraper
         end
         sleep(2)
 
-        # 📥 HTML Parsing
         html_content = ChromeDevToolsLite.evaluate(page, "document.documentElement.outerHTML")
         html_str = isa(html_content, Dict) ? html_content["value"] : html_content
         dom = parsehtml(html_str)
@@ -296,7 +287,6 @@ module Dashboard
         safe_headers = map(Utils.clean_header, headers)
         
         io = IOBuffer()
-        # 🔥 Force DataTables classes: display compact stripe nowrap
         print(io, "<table id='$id' class='display compact stripe nowrap' style='width:100%'><thead><tr>")
         foreach(h -> print(io, "<th>$h</th>"), safe_headers)
         print(io, "</tr></thead><tbody>")
