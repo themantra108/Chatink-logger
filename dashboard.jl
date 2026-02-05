@@ -2,7 +2,7 @@ using CSV, DataFrames, Dates, Printf
 using Mustache
 
 # ==============================================================================
-# 1. 📄 THE TEMPLATE (Scrollable & Clean)
+# 1. 📄 THE TEMPLATE
 # ==============================================================================
 const DASHBOARD_TEMPLATE = mt"""
 <!DOCTYPE html>
@@ -30,7 +30,7 @@ const DASHBOARD_TEMPLATE = mt"""
         .timestamp { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
         .header-container { text-align: center; }
 
-        /* --- STICKY & SCROLLING FIXES --- */
+        /* --- STICKY & SCROLLING --- */
         table.dataTable thead th { 
             background-color: #2c2c2c !important; 
             color: #ffffff;
@@ -40,7 +40,6 @@ const DASHBOARD_TEMPLATE = mt"""
             top: 0;
         }
 
-        /* Sticky First Column */
         table.dataTable tbody tr td:first-child {
             background-color: #1e1e1e !important;
             position: sticky;
@@ -49,12 +48,11 @@ const DASHBOARD_TEMPLATE = mt"""
             border-right: 2px solid #333;
         }
 
-        /* Prevent Text Wrapping (Forces Horizontal Scroll) */
         table.dataTable td, table.dataTable th {
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 300px; /* Safety limit for super long text */
+            max-width: 300px;
         }
 
         table.dataTable td { padding: 8px 10px; border-bottom: 1px solid #2d2d2d; }
@@ -82,19 +80,14 @@ const DASHBOARD_TEMPLATE = mt"""
             if (document.getElementById('{{id}}')) {
                 try {
                     $('#{{id}}').DataTable({
-                        "order": [], // Disable initial sorting
+                        "order": [],
                         "pageLength": 25,
                         "deferRender": true,
                         "processing": true,
-                        
-                        // Scroll Settings
                         "scrollX": true,
                         "scrollY": "60vh",
                         "scrollCollapse": true,
-                        
-                        // Sticky Columns
                         "fixedColumns": { left: 1 },
-                        
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -107,19 +100,69 @@ const DASHBOARD_TEMPLATE = mt"""
 """
 
 # ==============================================================================
-# 2. 🎨 UTILS
+# 2. 🧠 CONDITIONAL FORMATTING LOGIC
 # ==============================================================================
-get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
-function get_cell_style(val)
-    try
-        num = val isa Number ? val : parse(Float64, string(val))
-        if num > 0; return "background-color: rgba(46, 204, 113, 0.3); color: white;"
-        elseif num < 0; return "background-color: rgba(231, 76, 60, 0.3); color: white;"
+# Define Colors (with opacity for readability)
+const COL_RED    = "background-color: rgba(231, 76, 60, 0.5); color: white;"
+const COL_GREEN  = "background-color: rgba(46, 204, 113, 0.5); color: white;"
+const COL_YELLOW = "background-color: rgba(241, 196, 15, 0.5); color: white;"
+
+function get_cell_style(col_name::String, val)
+    # 1. Parse Number (Safely)
+    num = tryparse(Float64, string(val))
+    if isnothing(num); return ""; end
+
+    # 2. Normalize Column Name (Remove spaces, lowercase for matching)
+    # "4.5 r" -> "4.5r"
+    col = replace(lowercase(string(col_name)), " " => "")
+
+    # 3. Apply Rules
+    
+    # --- Rule: 4.5r ---
+    if occursin("4.5r", col)
+        if num > 400
+            return COL_YELLOW
+        elseif num >= 200 # Implicitly <= 400 because of 'elseif'
+            return COL_GREEN
+        elseif num < 50
+            return COL_RED
         end
-    catch; end
+
+    # --- Rule: Change Columns (4.5chg, 20chg, 50chg) ---
+    elseif any(x -> occursin(x, col), ["4.5chg", "20chg", "50chg"])
+        if num < -20
+            return COL_RED
+        elseif num > 20
+            return COL_GREEN
+        end
+
+    # --- Rule: 20r ---
+    elseif occursin("20r", col)
+        if num < 50
+            return COL_RED
+        elseif num > 75
+            return COL_GREEN
+        end
+
+    # --- Rule: 50r ---
+    elseif occursin("50r", col)
+        if num < 60
+            return COL_RED
+        elseif num > 85
+            return COL_GREEN
+        end
+    end
+
+    # Default fallback (Optional: Keep generic +/- coloring for other cols?)
+    # Remove this block if you ONLY want coloring on specific columns above.
+    # if num > 0; return "color: #2ecc71;"; end 
+    # if num < 0; return "color: #e74c3c;"; end
+
     return ""
 end
+
+get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
 function is_valid_table(df::DataFrame)
     if nrow(df) == 0; return false, "Empty Dataset (0 Rows)"; end
@@ -131,7 +174,7 @@ end
 # 3. 🏗️ BUILDER
 # ==============================================================================
 function build_table_html(df::DataFrame, id::String)
-    # 🗑️ REMOVE TIMESTAMP COLUMN
+    # Remove Timestamp
     if "Timestamp" in names(df)
         select!(df, Not("Timestamp"))
     end
@@ -142,7 +185,8 @@ function build_table_html(df::DataFrame, id::String)
     
     seen_headers = Set{String}()
     for col in names(df)
-        base_name = replace(string(col), r"[^a-zA-Z0-9\s_\-\%]" => "")
+        # Allow dots (.) in headers now so "4.5r" is readable
+        base_name = replace(string(col), r"[^a-zA-Z0-9\s_\-\%\.]" => "")
         safe_col = base_name
         count = 1
         while safe_col in seen_headers
@@ -159,7 +203,10 @@ function build_table_html(df::DataFrame, id::String)
         println(io, "<tr>")
         for col in names(df)
             val = row[col]
-            style = get_cell_style(val)
+            
+            # 🔥 PASS COLUMN NAME TO STYLE FUNCTION
+            style = get_cell_style(string(col), val)
+            
             clean_val = val isa Real ? @sprintf("%.2f", val) : val
             if ismissing(clean_val); clean_val = "-"; end
             println(io, "<td style='$style'>$clean_val</td>")
@@ -207,7 +254,7 @@ function main()
     ))
     
     open("public/index.html", "w") do io; write(io, final_html); end
-    println("✅ Dashboard generated (Timestamp Removed).")
+    println("✅ Dashboard generated with Custom Colors.")
 end
 
 main()
