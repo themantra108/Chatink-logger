@@ -20,13 +20,14 @@ const DASHBOARD_TEMPLATE = mt"""
         .card { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.4); }
         h3 { margin-top: 0; color: #bb86fc; border-bottom: 1px solid #333; padding-bottom: 10px; }
         
+        /* IST Timestamp Styling */
         .timestamp { 
             text-align: center; color: #4db6ac; font-size: 0.9rem; font-weight: bold;
             margin-bottom: 20px; border: 1px solid #333; display: inline-block;
             padding: 5px 15px; border-radius: 20px; background: #1a1a1a;
         }
         .header-container { text-align: center; }
-        .error-badge { color: #ff5252; border: 1px solid #ff5252; padding: 10px; border-radius: 4px; text-align: center; }
+        .error-badge { color: #ff5252; border: 1px solid #ff5252; padding: 10px; border-radius: 4px; text-align: center; font-size: 0.8rem; }
 
         /* Table Styles */
         table.dataTable { font-size: 0.85rem; }
@@ -51,6 +52,7 @@ const DASHBOARD_TEMPLATE = mt"""
     </div>
     <script>
         $(document).ready(function () {
+            // Only init DataTables if the table actually exists
             if (document.getElementById('{{id}}')) {
                 $('#{{id}}').DataTable({
                     "order": [[ 0, "desc" ]],
@@ -70,7 +72,7 @@ const DASHBOARD_TEMPLATE = mt"""
 """
 
 # ==============================================================================
-# 2. 🎨 COLOR & LOGIC
+# 2. 🎨 UTILS & VALIDATION
 # ==============================================================================
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
@@ -86,20 +88,21 @@ function get_cell_style(val)
     return ""
 end
 
-# 🛡️ SAFETY CHECK: Returns False if CSV is garbage
 function is_valid_table(df::DataFrame)
     if nrow(df) == 0; return false, "Empty Dataset (0 Rows)"; end
     if ncol(df) < 2; return false, "Malformed Data (< 2 Columns)"; end
     return true, "OK"
 end
 
+# ==============================================================================
+# 3. 🏗️ BUILDER
+# ==============================================================================
 function build_table_html(df::DataFrame, id::String)
     io = IOBuffer()
     println(io, """<table id="$id" class="display compact stripe nowrap" style="width:100%">""")
     println(io, "<thead><tr>")
     
-    # 🛡️ SANITIZE HEADERS: Duplicate headers break DataTables
-    # CSV.read handles duplicates by adding _1, but we ensure string conversion here
+    # Sanitize Headers
     for col in names(df)
         safe_col = replace(string(col), r"[^a-zA-Z0-9\s_\-\%\(\)]" => "") 
         println(io, "<th>$safe_col</th>")
@@ -113,7 +116,6 @@ function build_table_html(df::DataFrame, id::String)
             val = row[col]
             style = get_cell_style(val)
             clean_val = val isa Real ? @sprintf("%.2f", val) : val
-            # Handle missing values nicely
             if ismissing(clean_val); clean_val = "-"; end
             println(io, "<td style='$style'>$clean_val</td>")
         end
@@ -137,18 +139,17 @@ function main()
                     
                     println("Processing $file ...")
                     try
-                        # 🛡️ ROBUST READ: Handle errors if file is locked or corrupt
+                        # Loose strictness to prevent crashing on bad CSVs
                         df = CSV.read(joinpath(root, file), DataFrame; strict=false, silencewarnings=true)
                         
                         valid, msg = is_valid_table(df)
-                        
                         content = ""
+                        
                         if valid
                             content = build_table_html(df, id)
                         else
                             @warn "⚠️ Skipping $file: $msg"
                             content = """<div class="error-badge">⚠️ Data Not Available: $msg</div>"""
-                            # We keep the ID valid but don't generate a <table>, preventing JS crash
                         end
                         
                         push!(table_list, Dict(
@@ -157,13 +158,14 @@ function main()
                             "content" => content
                         ))
                     catch e
-                        println("❌ Critical Error processing $file: $e")
+                        println("❌ Error processing $file: $e")
                     end
                 end
             end
         end
     end
     
+    # Render with IST Time
     ist_time = get_ist()
     formatted_time = Dates.format(ist_time, "yyyy-mm-dd I:MM p") * " IST"
     
