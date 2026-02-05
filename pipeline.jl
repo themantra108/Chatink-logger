@@ -63,37 +63,54 @@ module Scraper
         data::DataFrame
     end
 
+    # 🔥 ULTRA SMART EXTRACTOR
     const EXTRACTOR_JS = """
     (() => {
         const clean = t => t ? t.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
         let csv = [];
         let seenTitles = {};
 
-        const findNearestHeader = (node) => {
+        const findTitle = (node) => {
+            // 1. Check for Chartink specific classes usually near tables
+            let container = node.closest('.card, .widget, .panel');
+            if(container) {
+                let h = container.querySelector('.card-header, .panel-heading, h1, h2, h3, h4, .scan_name');
+                if(h && h.innerText.length > 2) return h.innerText;
+            }
+
+            // 2. Walk backwards up the DOM tree looking for headers
             let curr = node;
-            let limit = 0;
-            while(curr && limit++ < 5) {
+            let depth = 0;
+            while(curr && depth++ < 15) {
                 let sib = curr.previousElementSibling;
                 while(sib) {
-                    if (/H[1-6]|B|STRONG/.test(sib.tagName) && sib.innerText.length > 3) {
-                        return sib.innerText;
-                    }
-                    if (sib.classList.contains('card-header')) {
-                        return sib.innerText;
-                    }
+                    if (/H[1-6]|B|STRONG/.test(sib.tagName) && sib.innerText.length > 3) return sib.innerText;
+                    if (sib.classList.contains('card-header')) return sib.innerText;
+                    
+                    // Look inside the sibling
+                    let innerH = sib.querySelector('h1, h2, h3, h4, .card-title');
+                    if(innerH && innerH.innerText.length > 2) return innerH.innerText;
+                    
                     sib = sib.previousElementSibling;
                 }
                 curr = curr.parentElement;
                 if (!curr || curr.tagName === 'BODY') break;
             }
-            return "Untitled_Widget";
+            return "Unknown_Widget";
         };
 
         const processTable = (table, rawTitle) => {
             let baseTitle = clean(rawTitle);
-            if (!baseTitle || baseTitle.includes("Misc_Table") || baseTitle.includes("Untitled")) {
-                 baseTitle = clean(findNearestHeader(table));
+            
+            // If explicit title failed, hunt for it
+            if (!baseTitle || baseTitle.includes("Misc_Table") || baseTitle.includes("Unknown")) {
+                 baseTitle = clean(findTitle(table));
             }
+
+            // Fallback if hunting failed
+            if (!baseTitle) baseTitle = "Widget_" + Math.floor(Math.random() * 1000);
+
+            // Ensure Uniqueness
             if (seenTitles[baseTitle]) {
                 seenTitles[baseTitle]++;
                 baseTitle = baseTitle + "_" + seenTitles[baseTitle];
@@ -112,24 +129,16 @@ module Scraper
             });
         };
 
-        document.querySelectorAll("div.card").forEach(card => {
-            const header = card.querySelector(".card-header");
-            const table = card.querySelector("table");
-            if (table) {
-                let title = header ? header.innerText : "";
-                if(!title) {
-                    const h = card.querySelector("h1,h2,h3,h4,h5");
-                    if(h) title = h.innerText;
-                }
-                processTable(table, title);
-                table.setAttribute("data-scraped", "true");
-            }
-        });
-
+        // Main Loop: Find all tables and process them
         document.querySelectorAll("table").forEach(table => {
-            if(!table.hasAttribute("data-scraped")) {
-                processTable(table, findNearestHeader(table));
+            // Check if it's inside a card first (High Confidence)
+            let card = table.closest('.card');
+            let initialTitle = "";
+            if(card) {
+                let h = card.querySelector(".card-header");
+                if(h) initialTitle = h.innerText;
             }
+            processTable(table, initialTitle);
         });
         
         return csv.join("\\n");
