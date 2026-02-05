@@ -80,13 +80,13 @@ end
 
 # Define Highlighters
 # Green Background for Positive
-hl_pos = HTMLHighlighter(
+hl_pos = Highlighter(
     (data, i, j) -> is_pos(data, i, j),
     HTMLDecoration(background = "rgba(46, 204, 113, 0.3)", color = "white")
 )
 
 # Red Background for Negative
-hl_neg = HTMLHighlighter(
+hl_neg = Highlighter(
     (data, i, j) -> is_neg(data, i, j),
     HTMLDecoration(background = "rgba(231, 76, 60, 0.3)", color = "white")
 )
