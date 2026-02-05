@@ -44,6 +44,20 @@ jobs:
 
       - name: Run Scraper 🕸️
         run: julia --project=. scraper.jl
+      # ... previous steps ...
+
+      - name: Build Dashboard 📊
+        run: julia --project=. dashboard.jl
+        
+        # 🚀 DEPLOY TO GITHUB PAGES
+      - name: Deploy to GitHub Pages 🌐
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          keep_files: true   # Optional: keeps history if you want
+          
+      # ... commit data step (keeps raw CSVs safe) ...
 
       - name: Commit and Push Data 💾
         run: |
