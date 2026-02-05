@@ -9,9 +9,7 @@ module Utils
     fmt_ist(dt) = Dates.format(dt, "yyyy-mm-dd I:MM p") * " IST"
 
     function clean_filename(s::String)
-        # Replace non-alphanumeric with underscores, keep dots/dashes
         s = replace(s, r"[^a-zA-Z0-9\-\.]" => "_")
-        # Collapse multiple underscores
         s = replace(s, r"__+" => "_")
         return strip(s, '_')
     end
@@ -57,13 +55,13 @@ module Scraper
     using ChromeDevToolsLite, DataFrames, CSV, Dates, JSON
 
     struct Widget
-        dashboard::String   # 📂 Folder Name
-        name::String        # 📄 File Name (Readable)
-        clean_name::String  # 📄 File Name (System Safe)
+        dashboard::String
+        name::String
+        clean_name::String
         data::DataFrame
     end
 
-    # 🔥 ULTRA SMART EXTRACTOR
+    # 🔥 NUCLEAR TITLE EXTRACTOR v2
     const EXTRACTOR_JS = """
     (() => {
         const clean = t => t ? t.trim().replace(/"/g, '""').replace(/\\n/g, " ") : "";
@@ -71,25 +69,36 @@ module Scraper
         let seenTitles = {};
 
         const findTitle = (node) => {
-            // 1. Check for Chartink specific classes usually near tables
-            let container = node.closest('.card, .widget, .panel');
+            // Strategy 1: Look for specific Chartink header classes in parent containers
+            let container = node.closest('.card, .widget, .panel, .box, .portlet');
             if(container) {
-                let h = container.querySelector('.card-header, .panel-heading, h1, h2, h3, h4, .scan_name');
-                if(h && h.innerText.length > 2) return h.innerText;
+                let h = container.querySelector('.card-header, .panel-heading, .portlet-title, .widget-header, h3, h4');
+                if(h && h.innerText.trim().length > 2) return h.innerText;
             }
 
-            // 2. Walk backwards up the DOM tree looking for headers
+            // Strategy 2: Walk backwards finding ANY significant text
             let curr = node;
             let depth = 0;
-            while(curr && depth++ < 15) {
+            while(curr && depth++ < 20) {
                 let sib = curr.previousElementSibling;
                 while(sib) {
-                    if (/H[1-6]|B|STRONG/.test(sib.tagName) && sib.innerText.length > 3) return sib.innerText;
-                    if (sib.classList.contains('card-header')) return sib.innerText;
+                    // Is this a header?
+                    if (/H[1-6]/.test(sib.tagName)) return sib.innerText;
                     
-                    // Look inside the sibling
-                    let innerH = sib.querySelector('h1, h2, h3, h4, .card-title');
-                    if(innerH && innerH.innerText.length > 2) return innerH.innerText;
+                    // Is this a bold tag with text?
+                    if ((/B|STRONG/.test(sib.tagName) || sib.classList.contains('font-bold')) && sib.innerText.length > 3) {
+                        return sib.innerText;
+                    }
+                    
+                    // Does it look like a header div?
+                    if (sib.innerText.length > 3 && sib.innerText.length < 100 && 
+                       (sib.className.includes('title') || sib.className.includes('header') || getComputedStyle(sib).fontWeight > 500)) {
+                        return sib.innerText;
+                    }
+                    
+                    // Check inside the sibling
+                    let inner = sib.querySelector('h1, h2, h3, h4, strong, b, .card-title, .caption-subject');
+                    if(inner && inner.innerText.length > 2) return inner.innerText;
                     
                     sib = sib.previousElementSibling;
                 }
@@ -107,8 +116,12 @@ module Scraper
                  baseTitle = clean(findTitle(table));
             }
 
-            // Fallback if hunting failed
-            if (!baseTitle) baseTitle = "Widget_" + Math.floor(Math.random() * 1000);
+            // Fallback: If still unknown, use the first column header as a hint
+            if ((!baseTitle || baseTitle.includes("Unknown")) && table.rows.length > 0) {
+                 const firstTh = table.querySelector("th");
+                 if(firstTh) baseTitle = "Widget_" + clean(firstTh.innerText).substring(0, 15);
+                 else baseTitle = "Widget_" + Math.floor(Math.random() * 1000);
+            }
 
             // Ensure Uniqueness
             if (seenTitles[baseTitle]) {
@@ -129,13 +142,13 @@ module Scraper
             });
         };
 
-        // Main Loop: Find all tables and process them
+        // Main Loop
         document.querySelectorAll("table").forEach(table => {
-            // Check if it's inside a card first (High Confidence)
-            let card = table.closest('.card');
+            // Check specific card header first (High Confidence)
+            let card = table.closest('.card, .portlet');
             let initialTitle = "";
             if(card) {
-                let h = card.querySelector(".card-header");
+                let h = card.querySelector(".card-header, .portlet-title, .caption");
                 if(h) initialTitle = h.innerText;
             }
             processTable(table, initialTitle);
@@ -150,14 +163,10 @@ module Scraper
     end
 
     function get_dashboard_name(page)
-        # 1. Try document title
         raw = ChromeDevToolsLite.evaluate(page, "document.title")
         val = isa(raw, Dict) ? raw["value"] : raw
-        
-        # 2. Clean it ("My Dashboard - Chartink.com" -> "My_Dashboard")
         clean = replace(val, r"(?i)\s*-\s*Chartink.*" => "")
         clean = Utils.clean_filename(clean)
-        
         return isempty(clean) ? "Unknown_Dashboard" : clean
     end
 
@@ -168,7 +177,6 @@ module Scraper
         end
         sleep(8) 
         
-        # Determine Folder Name from Page Title
         dash_folder = get_dashboard_name(page)
         @info "📂 Dashboard Detected: $dash_folder"
 
@@ -218,7 +226,6 @@ module Scraper
                 df = CSV.read(io, DataFrame; strict=false, silencewarnings=true)
                 if is_valid(df)
                     clean_id = Utils.clean_filename(title)
-                    # Pass the dashboard folder name to the Widget
                     push!(widgets, Widget(dash_folder, title, clean_id, df))
                 end
             catch e
@@ -259,13 +266,11 @@ module Dashboard
     end
 
     function save_history(w::Scraper.Widget)
-        # 📂 USE DASHBOARD NAME AS FOLDER
         folder_path = joinpath(Config.DATA_DIR, w.dashboard)
         mkpath(folder_path)
-        
         path = joinpath(folder_path, w.clean_name * ".csv")
-        final_df = w.data
         
+        final_df = w.data
         if isfile(path)
             old_df = CSV.read(path, DataFrame)
             if "Column22" in names(old_df); select!(old_df, Not("Column22")); end
@@ -308,17 +313,13 @@ module Dashboard
         mkpath(Config.PUBLIC_DIR)
         view_data = Dict{String, Any}[]
         
-        # Group Widgets by Dashboard for better HTML display
         grouped_widgets = Dict{String, Vector{Scraper.Widget}}()
-        for w in widgets
-            push!(get!(grouped_widgets, w.dashboard, Scraper.Widget[]), w)
-        end
+        for w in widgets; push!(get!(grouped_widgets, w.dashboard, Scraper.Widget[]), w); end
 
-        # Flatten for the template (or you could enhance template to show sections)
-        # For now, we'll prefix title: "Dashboard / Widget"
         for (dash_name, dash_widgets) in grouped_widgets
             for w in dash_widgets
                 save_history(w)
+                # Prefix Title with Dashboard Name for clarity
                 display_title = "$dash_name / $(w.name)"
                 unique_id = "tbl_" * Utils.clean_filename(dash_name) * "_" * w.clean_name
                 
