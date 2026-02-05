@@ -50,13 +50,25 @@ jobs:
           publish_dir: ./public
           keep_files: true
 
-      - name: Commit CSVs 💾
+      - name: Commit and Push Data 💾
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -d "chartink_data" ]; then
-              git add chartink_data
-              git commit -m "📈 Data: $(date -u)" || echo "No changes"
+          
+          # 1. Stage EVERYTHING (Data, Manifest.toml, Public folder)
+          # This prevents the "Unstaged changes" error during rebase
+          git add .
+          
+          # 2. Check if there are changes to commit
+          if git diff --staged --quiet; then
+              echo "No changes to commit."
+          else
+              timestamp=$(date -u)
+              git commit -m "📈 Data & Dashboard Update: ${timestamp}"
+              
+              # 3. Pull & Rebase (Safe now because directory is clean)
               git pull --rebase
+              
+              # 4. Push
               git push
           fi
