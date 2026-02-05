@@ -33,33 +33,23 @@
             top: 0;
         }
 
-        /* --- ALTERNATING ROW COLORS (ZEBRA STRIPING) --- */
-        
-        /* 1. Even Rows (Darker) */
-        table.dataTable tbody tr.even {
-            background-color: #1e1e1e !important; 
-        }
-        table.dataTable tbody tr.even td:first-child {
-            background-color: #1e1e1e !important; /* Sticky col matches row */
-        }
+        /* --- ZEBRA STRIPING --- */
+        table.dataTable tbody tr.even { background-color: #1e1e1e !important; }
+        table.dataTable tbody tr.odd { background-color: #2a2a2a !important; }
 
-        /* 2. Odd Rows (Lighter) */
-        table.dataTable tbody tr.odd {
-            background-color: #2a2a2a !important; 
-        }
-        table.dataTable tbody tr.odd td:first-child {
-            background-color: #2a2a2a !important; /* Sticky col matches row */
-        }
-
-        /* --- STICKY COLUMN POSITIONING --- */
+        /* --- STICKY FIRST COLUMN (Default State) --- */
+        /* Note: We will override this via inline styles if the Score is +/- 3 */
         table.dataTable tbody tr td:first-child {
             position: sticky;
             left: 0;
             z-index: 50;
-            border-right: 2px solid #444; /* Subtle separator */
+            border-right: 2px solid #444;
             color: #ffffff;
             font-weight: 500;
         }
+        /* Ensure sticky col matches row background by default */
+        table.dataTable tbody tr.even td:first-child { background-color: #1e1e1e; }
+        table.dataTable tbody tr.odd td:first-child { background-color: #2a2a2a; }
 
         /* --- CELL FORMATTING --- */
         table.dataTable td, table.dataTable th {
@@ -90,7 +80,7 @@
 <body>
     <div class="header-container">
         <h1>📊 Market Dashboard</h1>
-        <div class="timestamp">Last Updated: 2026-02-05 1:08 PM IST</div>
+        <div class="timestamp">Last Updated: 2026-02-05 1:21 PM IST</div>
     </div>
 
     <div class="card">
@@ -791,7 +781,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -940,7 +930,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -1176,7 +1166,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -1373,7 +1363,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -1752,7 +1742,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -2285,7 +2275,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -2332,7 +2322,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -2961,7 +2951,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -3005,7 +2995,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -3356,7 +3346,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -4895,7 +4885,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -7876,7 +7866,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -7957,7 +7947,7 @@
 <td style=''>2026-02-04</td>
 </tr>
 <tr>
-<td style=''>3rd Feb</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>3rd Feb</td>
 <td style='background-color: rgba(241, 196, 15, 0.5); color: white;'>2429.17</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>2656.69</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>95.13</td>
@@ -8003,7 +7993,7 @@
 <td style=''>2026-02-02</td>
 </tr>
 <tr>
-<td style=''>1st Feb</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>1st Feb</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>35.80</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-78.27</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>22.25</td>
@@ -8049,7 +8039,7 @@
 <td style=''>2026-01-30</td>
 </tr>
 <tr>
-<td style=''>29th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>29th Jan</td>
 <td style=''>195.24</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-85.02</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>25.25</td>
@@ -8118,7 +8108,7 @@
 <td style=''>2026-01-27</td>
 </tr>
 <tr>
-<td style=''>23rd Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>23rd Jan</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>28.98</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-90.56</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>13.83</td>
@@ -8187,7 +8177,7 @@
 <td style=''>2026-01-21</td>
 </tr>
 <tr>
-<td style=''>20th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>20th Jan</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>7.71</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-82.21</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>12.36</td>
@@ -8210,7 +8200,7 @@
 <td style=''>2026-01-20</td>
 </tr>
 <tr>
-<td style=''>19th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>19th Jan</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>39.69</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-70.70</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>24.42</td>
@@ -8233,7 +8223,7 @@
 <td style=''>2026-01-19</td>
 </tr>
 <tr>
-<td style=''>16th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>16th Jan</td>
 <td style=''>158.49</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-49.22</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>31.58</td>
@@ -8325,7 +8315,7 @@
 <td style=''>2026-01-12</td>
 </tr>
 <tr>
-<td style=''>9th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>9th Jan</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>17.97</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>43.75</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>30.46</td>
@@ -8348,7 +8338,7 @@
 <td style=''>2026-01-09</td>
 </tr>
 <tr>
-<td style=''>8th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>8th Jan</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>13.10</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-96.24</td>
 <td style=''>55.57</td>
@@ -8371,7 +8361,7 @@
 <td style=''>2026-01-08</td>
 </tr>
 <tr>
-<td style=''>7th Jan</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>7th Jan</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>339.29</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>111.36</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>118.97</td>
@@ -8440,7 +8430,7 @@
 <td style=''>2026-01-05</td>
 </tr>
 <tr>
-<td style=''>2nd Jan</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>2nd Jan</td>
 <td style='background-color: rgba(241, 196, 15, 0.5); color: white;'>741.18</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>116.93</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>206.42</td>
@@ -8486,7 +8476,7 @@
 <td style=''>2026-01-01</td>
 </tr>
 <tr>
-<td style=''>31st Dec</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>31st Dec</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>350.00</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>130.26</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>128.48</td>
@@ -8532,7 +8522,7 @@
 <td style=''>2025-12-30</td>
 </tr>
 <tr>
-<td style=''>29th Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>29th Dec</td>
 <td style=''>76.83</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-58.77</td>
 <td style=''>66.95</td>
@@ -8624,7 +8614,7 @@
 <td style=''>2025-12-23</td>
 </tr>
 <tr>
-<td style=''>22nd Dec</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>22nd Dec</td>
 <td style='background-color: rgba(241, 196, 15, 0.5); color: white;'>588.46</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>54.86</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>98.39</td>
@@ -8693,7 +8683,7 @@
 <td style=''>2025-12-18</td>
 </tr>
 <tr>
-<td style=''>17th Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>17th Dec</td>
 <td style=''>58.97</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-45.84</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>32.59</td>
@@ -8716,7 +8706,7 @@
 <td style=''>2025-12-17</td>
 </tr>
 <tr>
-<td style=''>16th Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>16th Dec</td>
 <td style=''>108.89</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-66.67</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>40.45</td>
@@ -8808,7 +8798,7 @@
 <td style=''>2025-12-11</td>
 </tr>
 <tr>
-<td style=''>10th Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>10th Dec</td>
 <td style=''>171.43</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-68.94</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>21.13</td>
@@ -8854,7 +8844,7 @@
 <td style=''>2025-12-09</td>
 </tr>
 <tr>
-<td style=''>8th Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>8th Dec</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>12.93</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-88.58</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>19.83</td>
@@ -8923,7 +8913,7 @@
 <td style=''>2025-12-04</td>
 </tr>
 <tr>
-<td style=''>3rd Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>3rd Dec</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>33.80</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-56.54</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>35.35</td>
@@ -8946,7 +8936,7 @@
 <td style=''>2025-12-03</td>
 </tr>
 <tr>
-<td style=''>2nd Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>2nd Dec</td>
 <td style=''>77.78</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-51.72</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>47.91</td>
@@ -9084,7 +9074,7 @@
 <td style=''>2025-11-25</td>
 </tr>
 <tr>
-<td style=''>24th Nov</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>24th Nov</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>29.38</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-64.41</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>32.97</td>
@@ -9107,7 +9097,7 @@
 <td style=''>2025-11-24</td>
 </tr>
 <tr>
-<td style=''>21st Nov</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>21st Nov</td>
 <td style=''>81.36</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-43.79</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>42.87</td>
@@ -9268,7 +9258,7 @@
 <td style=''>2025-11-13</td>
 </tr>
 <tr>
-<td style=''>12th Nov</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>12th Nov</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>326.32</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>167.34</td>
 <td style=''>71.68</td>
@@ -9360,7 +9350,7 @@
 <td style=''>2025-11-07</td>
 </tr>
 <tr>
-<td style=''>6th Nov</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>6th Nov</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>31.64</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-75.26</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>44.71</td>
@@ -9406,7 +9396,7 @@
 <td style=''>2025-11-04</td>
 </tr>
 <tr>
-<td style=''>3rd Nov</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>3rd Nov</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>201.64</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>44.93</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>117.04</td>
@@ -9475,7 +9465,7 @@
 <td style=''>2025-10-30</td>
 </tr>
 <tr>
-<td style=''>29th Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>29th Oct</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>334.29</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>107.34</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>133.58</td>
@@ -9590,7 +9580,7 @@
 <td style=''>2025-10-23</td>
 </tr>
 <tr>
-<td style=''>21st Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>21st Oct</td>
 <td style='background-color: rgba(241, 196, 15, 0.5); color: white;'>1640.00</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>614.87</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>120.79</td>
@@ -9613,7 +9603,7 @@
 <td style=''>2025-10-21</td>
 </tr>
 <tr>
-<td style=''>20th Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>20th Oct</td>
 <td style=''>193.55</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>112.28</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>84.76</td>
@@ -9659,7 +9649,7 @@
 <td style=''>2025-10-17</td>
 </tr>
 <tr>
-<td style=''>16th Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>16th Oct</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>247.62</td>
 <td style=''>-4.93</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>76.90</td>
@@ -9682,7 +9672,7 @@
 <td style=''>2025-10-16</td>
 </tr>
 <tr>
-<td style=''>15th Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>15th Oct</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>260.47</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>367.87</td>
 <td style=''>63.01</td>
@@ -9705,7 +9695,7 @@
 <td style=''>2025-10-15</td>
 </tr>
 <tr>
-<td style=''>14th Oct</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>14th Oct</td>
 <td style=''>55.67</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-54.67</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>44.22</td>
@@ -9751,7 +9741,7 @@
 <td style=''>2025-10-13</td>
 </tr>
 <tr>
-<td style=''>10th Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>10th Oct</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>300.00</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>56.64</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>79.70</td>
@@ -9791,7 +9781,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -10110,7 +10100,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -10755,7 +10745,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -11036,7 +11026,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -11765,7 +11755,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -13565,7 +13555,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -17136,7 +17126,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -17183,7 +17173,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -17264,7 +17254,7 @@
 <td style=''>2026-02-04</td>
 </tr>
 <tr>
-<td style=''>3rd Feb</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>3rd Feb</td>
 <td style='background-color: rgba(241, 196, 15, 0.5); color: white;'>2429.17</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>2656.69</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>95.13</td>
@@ -17310,7 +17300,7 @@
 <td style=''>2026-02-02</td>
 </tr>
 <tr>
-<td style=''>1st Feb</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>1st Feb</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>35.80</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-78.27</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>22.25</td>
@@ -17356,7 +17346,7 @@
 <td style=''>2026-01-30</td>
 </tr>
 <tr>
-<td style=''>29th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>29th Jan</td>
 <td style=''>195.24</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-85.02</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>25.25</td>
@@ -17425,7 +17415,7 @@
 <td style=''>2026-01-27</td>
 </tr>
 <tr>
-<td style=''>23rd Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>23rd Jan</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>28.98</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-90.56</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>13.83</td>
@@ -17494,7 +17484,7 @@
 <td style=''>2026-01-21</td>
 </tr>
 <tr>
-<td style=''>20th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>20th Jan</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>7.71</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-82.21</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>12.36</td>
@@ -17517,7 +17507,7 @@
 <td style=''>2026-01-20</td>
 </tr>
 <tr>
-<td style=''>19th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>19th Jan</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>39.69</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-70.70</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>24.42</td>
@@ -17540,7 +17530,7 @@
 <td style=''>2026-01-19</td>
 </tr>
 <tr>
-<td style=''>16th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>16th Jan</td>
 <td style=''>158.49</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-49.22</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>31.58</td>
@@ -17632,7 +17622,7 @@
 <td style=''>2026-01-12</td>
 </tr>
 <tr>
-<td style=''>9th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>9th Jan</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>17.97</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>43.75</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>30.46</td>
@@ -17655,7 +17645,7 @@
 <td style=''>2026-01-09</td>
 </tr>
 <tr>
-<td style=''>8th Jan</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>8th Jan</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>13.10</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-96.24</td>
 <td style=''>55.57</td>
@@ -17678,7 +17668,7 @@
 <td style=''>2026-01-08</td>
 </tr>
 <tr>
-<td style=''>7th Jan</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>7th Jan</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>339.29</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>111.36</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>118.97</td>
@@ -17747,7 +17737,7 @@
 <td style=''>2026-01-05</td>
 </tr>
 <tr>
-<td style=''>2nd Jan</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>2nd Jan</td>
 <td style='background-color: rgba(241, 196, 15, 0.5); color: white;'>741.18</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>116.93</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>206.42</td>
@@ -17793,7 +17783,7 @@
 <td style=''>2026-01-01</td>
 </tr>
 <tr>
-<td style=''>31st Dec</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>31st Dec</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>350.00</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>130.26</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>128.48</td>
@@ -17839,7 +17829,7 @@
 <td style=''>2025-12-30</td>
 </tr>
 <tr>
-<td style=''>29th Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>29th Dec</td>
 <td style=''>76.83</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-58.77</td>
 <td style=''>66.95</td>
@@ -17931,7 +17921,7 @@
 <td style=''>2025-12-23</td>
 </tr>
 <tr>
-<td style=''>22nd Dec</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>22nd Dec</td>
 <td style='background-color: rgba(241, 196, 15, 0.5); color: white;'>588.46</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>54.86</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>98.39</td>
@@ -18000,7 +17990,7 @@
 <td style=''>2025-12-18</td>
 </tr>
 <tr>
-<td style=''>17th Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>17th Dec</td>
 <td style=''>58.97</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-45.84</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>32.59</td>
@@ -18023,7 +18013,7 @@
 <td style=''>2025-12-17</td>
 </tr>
 <tr>
-<td style=''>16th Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>16th Dec</td>
 <td style=''>108.89</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-66.67</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>40.45</td>
@@ -18115,7 +18105,7 @@
 <td style=''>2025-12-11</td>
 </tr>
 <tr>
-<td style=''>10th Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>10th Dec</td>
 <td style=''>171.43</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-68.94</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>21.13</td>
@@ -18161,7 +18151,7 @@
 <td style=''>2025-12-09</td>
 </tr>
 <tr>
-<td style=''>8th Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>8th Dec</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>12.93</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-88.58</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>19.83</td>
@@ -18230,7 +18220,7 @@
 <td style=''>2025-12-04</td>
 </tr>
 <tr>
-<td style=''>3rd Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>3rd Dec</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>33.80</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-56.54</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>35.35</td>
@@ -18253,7 +18243,7 @@
 <td style=''>2025-12-03</td>
 </tr>
 <tr>
-<td style=''>2nd Dec</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>2nd Dec</td>
 <td style=''>77.78</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-51.72</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>47.91</td>
@@ -18391,7 +18381,7 @@
 <td style=''>2025-11-25</td>
 </tr>
 <tr>
-<td style=''>24th Nov</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>24th Nov</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>29.38</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-64.41</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>32.97</td>
@@ -18414,7 +18404,7 @@
 <td style=''>2025-11-24</td>
 </tr>
 <tr>
-<td style=''>21st Nov</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>21st Nov</td>
 <td style=''>81.36</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-43.79</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>42.87</td>
@@ -18575,7 +18565,7 @@
 <td style=''>2025-11-13</td>
 </tr>
 <tr>
-<td style=''>12th Nov</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>12th Nov</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>326.32</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>167.34</td>
 <td style=''>71.68</td>
@@ -18667,7 +18657,7 @@
 <td style=''>2025-11-07</td>
 </tr>
 <tr>
-<td style=''>6th Nov</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>6th Nov</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>31.64</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-75.26</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>44.71</td>
@@ -18713,7 +18703,7 @@
 <td style=''>2025-11-04</td>
 </tr>
 <tr>
-<td style=''>3rd Nov</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>3rd Nov</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>201.64</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>44.93</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>117.04</td>
@@ -18782,7 +18772,7 @@
 <td style=''>2025-10-30</td>
 </tr>
 <tr>
-<td style=''>29th Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>29th Oct</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>334.29</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>107.34</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>133.58</td>
@@ -18897,7 +18887,7 @@
 <td style=''>2025-10-23</td>
 </tr>
 <tr>
-<td style=''>21st Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>21st Oct</td>
 <td style='background-color: rgba(241, 196, 15, 0.5); color: white;'>1640.00</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>614.87</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>120.79</td>
@@ -18920,7 +18910,7 @@
 <td style=''>2025-10-21</td>
 </tr>
 <tr>
-<td style=''>20th Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>20th Oct</td>
 <td style=''>193.55</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>112.28</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>84.76</td>
@@ -18966,7 +18956,7 @@
 <td style=''>2025-10-17</td>
 </tr>
 <tr>
-<td style=''>16th Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>16th Oct</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>247.62</td>
 <td style=''>-4.93</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>76.90</td>
@@ -18989,7 +18979,7 @@
 <td style=''>2025-10-16</td>
 </tr>
 <tr>
-<td style=''>15th Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>15th Oct</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>260.47</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>367.87</td>
 <td style=''>63.01</td>
@@ -19012,7 +19002,7 @@
 <td style=''>2025-10-15</td>
 </tr>
 <tr>
-<td style=''>14th Oct</td>
+<td style='background-color: rgba(231, 76, 60, 0.9) !important; color: white; font-weight: bold;'>14th Oct</td>
 <td style=''>55.67</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>-54.67</td>
 <td style='background-color: rgba(231, 76, 60, 0.5); color: white;'>44.22</td>
@@ -19058,7 +19048,7 @@
 <td style=''>2025-10-13</td>
 </tr>
 <tr>
-<td style=''>10th Oct</td>
+<td style='background-color: rgba(46, 204, 113, 0.9) !important; color: white; font-weight: bold;'>10th Oct</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>300.00</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>56.64</td>
 <td style='background-color: rgba(46, 204, 113, 0.5); color: white;'>79.70</td>
@@ -19098,7 +19088,7 @@
                         "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'], // Enforce classes
+                        "stripeClasses": ['odd', 'even'],
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
