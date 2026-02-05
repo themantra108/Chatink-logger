@@ -1,9 +1,12 @@
-name: 🚀 Chartink Pipeline (Scrape + Build)
+name: 🚀 Chartink Pipeline
 
 on:
-  workflow_dispatch:      # Manual trigger button
-  schedule:
-    - cron: '*/5 * * * *' # Runs every 5 minutes
+  workflow_dispatch:       # 1. Manual Trigger
+  push:                    # 2. Trigger on Code Push
+    branches:
+      - main
+  schedule:                # 3. Trigger on Schedule (Every 5 mins)
+    - cron: '*/5 * * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,7 +32,6 @@ jobs:
           version: '1'
 
       # 3. 📦 Cache & Install Dependencies
-      # This ensures 'Mustache', 'ChromeDevToolsLite', etc. are ready
       - name: Cache Julia artifacts
         uses: julia-actions/cache@v2
 
@@ -38,7 +40,7 @@ jobs:
           julia --project=. -e '
             using Pkg
             Pkg.instantiate()
-            # Safety check to ensure critical packages are present
+            # Ensure critical packages are explicitly present
             Pkg.add(["ChromeDevToolsLite", "DataFrames", "CSV", "Dates", "JSON", "Printf", "Mustache"])
             Pkg.resolve()
           '
@@ -49,9 +51,8 @@ jobs:
           google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 &
           sleep 5
 
-      # 5. 🏗️ RUN THE UNIFIED PIPELINE
-      # This replaces both 'scraper.jl' and 'dashboard.jl'
-      - name: Run Pipeline (Scrape -> Save -> Build)
+      # 5. 🏗️ RUN PIPELINE (Scrape -> Processing -> Dashboard Build)
+      - name: Run Pipeline
         run: julia --project=. pipeline.jl
 
       # 6. 🚀 Deploy Dashboard to GitHub Pages
@@ -64,23 +65,23 @@ jobs:
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
 
-      # 7. 💾 Commit CSV Data Back to Repo
-      - name: Save Data History
+      # 7. 💾 Save Data History
+      - name: Commit and Push Data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Stage all changes (Data CSVs + Manifest updates)
+          # Stage EVERYTHING (Data CSVs, Manifest updates, etc.)
           git add .
           
-          # Only commit if there is new data
+          # Only commit if there are changes
           if git diff --staged --quiet; then
-              echo "No changes to data."
+              echo "No changes to commit."
           else
               timestamp=$(date -u)
               git commit -m "📈 Data Update: ${timestamp}"
               
-              # Pull latest changes to avoid conflicts, then push
+              # Rebase to pull any changes that happened while this job was running
               git pull --rebase
               git push
           fi
