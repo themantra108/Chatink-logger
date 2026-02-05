@@ -2,7 +2,7 @@ using CSV, DataFrames, Dates, Printf
 using Mustache
 
 # ==============================================================================
-# 1. 📄 THE TEMPLATE (Resizable, Stable, Correct Headers)
+# 1. 📄 THE TEMPLATE (Infinite Scroll)
 # ==============================================================================
 const DASHBOARD_TEMPLATE = mt"""
 <!DOCTYPE html>
@@ -30,7 +30,7 @@ const DASHBOARD_TEMPLATE = mt"""
         .timestamp { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
         .header-container { text-align: center; }
 
-        /* --- STICKY HEADERS --- */
+        /* --- STICKY HEADERS & COLUMNS --- */
         table.dataTable thead th { 
             background-color: #2c2c2c !important; 
             color: #ffffff;
@@ -40,7 +40,6 @@ const DASHBOARD_TEMPLATE = mt"""
             top: 0;
         }
 
-        /* --- STICKY FIRST COLUMN --- */
         table.dataTable tbody tr td:first-child {
             background-color: #1e1e1e !important;
             position: sticky;
@@ -59,7 +58,7 @@ const DASHBOARD_TEMPLATE = mt"""
         table.dataTable td { padding: 8px 10px; border-bottom: 1px solid #2d2d2d; }
         table.dataTable { border-collapse: separate; border-spacing: 0; width: 100% !important; }
 
-        /* --- RESIZABLE WIDGET LOGIC --- */
+        /* --- RESIZABLE SCROLL AREA --- */
         .dataTables_scrollBody {
             resize: vertical !important; 
             border-bottom: 3px solid #444; 
@@ -69,8 +68,6 @@ const DASHBOARD_TEMPLATE = mt"""
         .dataTables_scrollBody::-webkit-scrollbar { width: 12px; height: 12px; }
         .dataTables_scrollBody::-webkit-scrollbar-track { background: #1a1a1a; }
         .dataTables_scrollBody::-webkit-scrollbar-thumb { background: #444; border-radius: 6px; border: 2px solid #1a1a1a; }
-        .dataTables_scrollBody::-webkit-scrollbar-thumb:hover { background: #666; }
-        .dataTables_scrollBody::-webkit-resizer { background-color: #333; border-top-left-radius: 4px; }
     </style>
     
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -95,12 +92,18 @@ const DASHBOARD_TEMPLATE = mt"""
                 try {
                     $('#{{id}}').DataTable({
                         "order": [],
-                        "pageLength": 50,
-                        "deferRender": false,
+                        
+                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
+                        "paging": false,
+                        "info": false,       // Hides "Showing 1 to X" text
+                        
+                        "deferRender": false, // Keep data loaded for smooth scroll
                         "processing": false,
+                        
                         "scrollX": true,
-                        "scrollY": "50vh", 
+                        "scrollY": "50vh",    // Initial height (Resizable)
                         "scrollCollapse": true,
+                        
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
@@ -163,7 +166,6 @@ function build_table_html(df::DataFrame, id::String)
     
     seen_headers = Set{String}()
     for col in names(df)
-        # 🔥 FIX: Added \. to the regex to allow decimal points in headers
         base_name = replace(string(col), r"[^a-zA-Z0-9\s_\-\%\.]" => "")
         safe_col = base_name
         count = 1
@@ -229,7 +231,7 @@ function main()
     ))
     
     open("public/index.html", "w") do io; write(io, final_html); end
-    println("✅ Dashboard generated (Headers Fixed).")
+    println("✅ Dashboard generated (Pagination Removed).")
 end
 
 main()
