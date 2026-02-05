@@ -2,7 +2,7 @@ using CSV, DataFrames, Dates, Printf
 using Mustache
 
 # ==============================================================================
-# 1. 📄 THE TEMPLATE (Infinite Scroll)
+# 1. 📄 THE TEMPLATE (Striped & Rule-Based)
 # ==============================================================================
 const DASHBOARD_TEMPLATE = mt"""
 <!DOCTYPE html>
@@ -30,7 +30,7 @@ const DASHBOARD_TEMPLATE = mt"""
         .timestamp { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
         .header-container { text-align: center; }
 
-        /* --- STICKY HEADERS & COLUMNS --- */
+        /* --- STICKY HEADERS --- */
         table.dataTable thead th { 
             background-color: #2c2c2c !important; 
             color: #ffffff;
@@ -40,12 +40,32 @@ const DASHBOARD_TEMPLATE = mt"""
             top: 0;
         }
 
+        /* --- ALTERNATING ROW COLORS (ZEBRA STRIPING) --- */
+        
+        /* 1. Even Rows (Darker) */
+        table.dataTable tbody tr.even {
+            background-color: #1e1e1e !important; 
+        }
+        table.dataTable tbody tr.even td:first-child {
+            background-color: #1e1e1e !important; /* Sticky col matches row */
+        }
+
+        /* 2. Odd Rows (Lighter) */
+        table.dataTable tbody tr.odd {
+            background-color: #2a2a2a !important; 
+        }
+        table.dataTable tbody tr.odd td:first-child {
+            background-color: #2a2a2a !important; /* Sticky col matches row */
+        }
+
+        /* --- STICKY COLUMN POSITIONING --- */
         table.dataTable tbody tr td:first-child {
-            background-color: #1e1e1e !important;
             position: sticky;
             left: 0;
             z-index: 50;
-            border-right: 2px solid #333;
+            border-right: 2px solid #444; /* Subtle separator */
+            color: #ffffff;
+            font-weight: 500;
         }
 
         /* --- CELL FORMATTING --- */
@@ -55,10 +75,10 @@ const DASHBOARD_TEMPLATE = mt"""
             text-overflow: ellipsis;
             max-width: 300px;
         }
-        table.dataTable td { padding: 8px 10px; border-bottom: 1px solid #2d2d2d; }
+        table.dataTable td { padding: 8px 10px; border-bottom: 1px solid #333; }
         table.dataTable { border-collapse: separate; border-spacing: 0; width: 100% !important; }
 
-        /* --- RESIZABLE SCROLL AREA --- */
+        /* --- SCROLLBARS --- */
         .dataTables_scrollBody {
             resize: vertical !important; 
             border-bottom: 3px solid #444; 
@@ -92,19 +112,15 @@ const DASHBOARD_TEMPLATE = mt"""
                 try {
                     $('#{{id}}').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -117,7 +133,7 @@ const DASHBOARD_TEMPLATE = mt"""
 """
 
 # ==============================================================================
-# 2. 🧠 COLOR RULES
+# 2. 🧠 COLOR RULES (Specific Only)
 # ==============================================================================
 const COL_RED    = "background-color: rgba(231, 76, 60, 0.5); color: white;"
 const COL_GREEN  = "background-color: rgba(46, 204, 113, 0.5); color: white;"
@@ -129,20 +145,31 @@ function get_cell_style(col_name::String, val)
 
     col = replace(lowercase(string(col_name)), " " => "")
 
+    # --- ONLY YOUR RULES BELOW ---
+    
+    # Rule: 4.5r
     if occursin("4.5r", col)
         if num > 400; return COL_YELLOW;
         elseif num >= 200; return COL_GREEN;
         elseif num < 50; return COL_RED; end
+
+    # Rule: Change Columns
     elseif any(x -> occursin(x, col), ["4.5chg", "20chg", "50chg"])
         if num < -20; return COL_RED;
         elseif num > 20; return COL_GREEN; end
+
+    # Rule: 20r
     elseif occursin("20r", col)
         if num < 50; return COL_RED;
         elseif num > 75; return COL_GREEN; end
+
+    # Rule: 50r
     elseif occursin("50r", col)
         if num < 60; return COL_RED;
         elseif num > 85; return COL_GREEN; end
     end
+    
+    # NO GENERIC FALLBACK -> Other cells stay transparent (showing stripe color)
     return ""
 end
 
@@ -161,6 +188,7 @@ function build_table_html(df::DataFrame, id::String)
     if "Timestamp" in names(df); select!(df, Not("Timestamp")); end
 
     io = IOBuffer()
+    # Note: 'stripe' class enables the CSS selectors we wrote above
     println(io, """<table id="$id" class="display compact stripe nowrap" style="width:100%">""")
     println(io, "<thead><tr>")
     
@@ -231,7 +259,7 @@ function main()
     ))
     
     open("public/index.html", "w") do io; write(io, final_html); end
-    println("✅ Dashboard generated (Pagination Removed).")
+    println("✅ Dashboard generated (Striped Rows).")
 end
 
 main()
