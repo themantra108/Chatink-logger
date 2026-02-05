@@ -23,7 +23,7 @@
         .timestamp { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
         .header-container { text-align: center; }
 
-        /* --- STICKY & SCROLLING --- */
+        /* --- STICKY HEADERS --- */
         table.dataTable thead th { 
             background-color: #2c2c2c !important; 
             color: #ffffff;
@@ -33,6 +33,7 @@
             top: 0;
         }
 
+        /* --- STICKY FIRST COLUMN --- */
         table.dataTable tbody tr td:first-child {
             background-color: #1e1e1e !important;
             position: sticky;
@@ -41,15 +42,28 @@
             border-right: 2px solid #333;
         }
 
+        /* --- CELL FORMATTING --- */
         table.dataTable td, table.dataTable th {
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             max-width: 300px;
         }
-
         table.dataTable td { padding: 8px 10px; border-bottom: 1px solid #2d2d2d; }
         table.dataTable { border-collapse: separate; border-spacing: 0; width: 100% !important; }
+
+        /* --- RESIZABLE WIDGET LOGIC --- */
+        .dataTables_scrollBody {
+            resize: vertical !important; 
+            border-bottom: 3px solid #444; 
+            transform: translateZ(0);
+            -webkit-overflow-scrolling: touch; 
+        }
+        .dataTables_scrollBody::-webkit-scrollbar { width: 12px; height: 12px; }
+        .dataTables_scrollBody::-webkit-scrollbar-track { background: #1a1a1a; }
+        .dataTables_scrollBody::-webkit-scrollbar-thumb { background: #444; border-radius: 6px; border: 2px solid #1a1a1a; }
+        .dataTables_scrollBody::-webkit-scrollbar-thumb:hover { background: #666; }
+        .dataTables_scrollBody::-webkit-resizer { background-color: #333; border-top-left-radius: 4px; }
     </style>
     
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -59,7 +73,7 @@
 <body>
     <div class="header-container">
         <h1>📊 Market Dashboard</h1>
-        <div class="timestamp">Last Updated: 2026-02-05 12:09 PM IST</div>
+        <div class="timestamp">Last Updated: 2026-02-05 12:20 PM IST</div>
     </div>
 
     <div class="card">
@@ -752,11 +766,11 @@
                 try {
                     $('#tbl_1dayCheck').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -899,11 +913,11 @@
                 try {
                     $('#tbl_3dayCheck').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -1133,11 +1147,11 @@
                 try {
                     $('#tbl_4dayCheck').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -1328,11 +1342,11 @@
                 try {
                     $('#tbl_5dayCheck').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -1705,11 +1719,11 @@
                 try {
                     $('#tbl_7dayCheck').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -2236,11 +2250,11 @@
                 try {
                     $('#tbl_7daysignal').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -2281,11 +2295,11 @@
                 try {
                     $('#tbl_ATLAS').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -2908,11 +2922,11 @@
                 try {
                     $('#tbl_Aboutto').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -2950,11 +2964,11 @@
                 try {
                     $('#tbl_EpisodicPivot').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -3299,11 +3313,11 @@
                 try {
                     $('#tbl_Firsttimer').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -4836,11 +4850,11 @@
                 try {
                     $('#tbl_MMTMainScannerDaily').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -7815,11 +7829,11 @@
                 try {
                     $('#tbl_MOVINGAVERAGEALIGNMENT').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -9728,11 +9742,11 @@
                 try {
                     $('#tbl_Mktcondition').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -10045,11 +10059,11 @@
                 try {
                     $('#tbl_Mod5dayCheck').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -10688,11 +10702,11 @@
                 try {
                     $('#tbl_Mod7dayCheck').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -10967,11 +10981,11 @@
                 try {
                     $('#tbl_ModsignalRS').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -11694,11 +11708,11 @@
                 try {
                     $('#tbl_RS').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -13492,11 +13506,11 @@
                 try {
                     $('#tbl_RSRatingScore').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -17061,11 +17075,11 @@
                 try {
                     $('#tbl_funda').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -17106,11 +17120,11 @@
                 try {
                     $('#tbl_ATLAS').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
@@ -19019,11 +19033,11 @@
                 try {
                     $('#tbl_Mktcondition').DataTable({
                         "order": [],
-                        "pageLength": 25,
-                        "deferRender": true,
-                        "processing": true,
+                        "pageLength": 50,
+                        "deferRender": false,
+                        "processing": false,
                         "scrollX": true,
-                        "scrollY": "60vh",
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
                         "fixedColumns": { left: 1 },
                         "language": { "search": "", "searchPlaceholder": "Search..." }
