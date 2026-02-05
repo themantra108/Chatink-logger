@@ -2,7 +2,7 @@ using CSV, DataFrames, Dates, Printf
 using Mustache
 
 # ==============================================================================
-# 1. 📄 THE TEMPLATE
+# 1. 📄 THE TEMPLATE (Performance Tuned)
 # ==============================================================================
 const DASHBOARD_TEMPLATE = mt"""
 <!DOCTYPE html>
@@ -10,29 +10,42 @@ const DASHBOARD_TEMPLATE = mt"""
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chartink Pro (IST)</title>
+    <title>Chartink Pro (Fast)</title>
     
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/fixedcolumns/4.2.2/css/fixedColumns.dataTables.min.css">
     
     <style>
         body { font-family: -apple-system, sans-serif; background: #121212; color: #e0e0e0; padding: 10px; }
-        .card { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.4); }
+        
+        /* PERFORMANCE: 'contain' isolates the card rendering */
+        .card { 
+            background: #1e1e1e; 
+            border: 1px solid #333; 
+            border-radius: 8px; 
+            padding: 10px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4); 
+            contain: content; 
+        }
         h3 { margin-top: 0; color: #bb86fc; border-bottom: 1px solid #333; padding-bottom: 10px; }
         
-        /* IST Timestamp Styling */
         .timestamp { 
             text-align: center; color: #4db6ac; font-size: 0.9rem; font-weight: bold;
             margin-bottom: 20px; border: 1px solid #333; display: inline-block;
             padding: 5px 15px; border-radius: 20px; background: #1a1a1a;
         }
         .header-container { text-align: center; }
-        .error-badge { color: #ff5252; border: 1px solid #ff5252; padding: 10px; border-radius: 4px; text-align: center; font-size: 0.8rem; }
 
-        /* Table Styles */
         table.dataTable { font-size: 0.85rem; }
         table.dataTable td { padding: 6px 8px; border-bottom: 1px solid #2d2d2d; }
         table.dataTable thead th { background-color: #2c2c2c; border-bottom: 2px solid #555; }
+        
+        /* Force GPU Acceleration for scrolling */
+        .dataTables_scrollBody {
+            -webkit-overflow-scrolling: touch;
+            will-change: transform;
+        }
     </style>
     
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -52,17 +65,31 @@ const DASHBOARD_TEMPLATE = mt"""
     </div>
     <script>
         $(document).ready(function () {
-            // Only init DataTables if the table actually exists
+            $.fn.dataTable.ext.errMode = 'none';
+
             if (document.getElementById('{{id}}')) {
-                $('#{{id}}').DataTable({
-                    "order": [[ 0, "desc" ]],
-                    "pageLength": 25,
-                    "scrollX": true,
-                    "scrollY": "60vh",
-                    "scrollCollapse": true,
-                    "fixedColumns": { left: 1 },
-                    "language": { "search": "", "searchPlaceholder": "Search..." }
-                });
+                try {
+                    $('#{{id}}').DataTable({
+                        "order": [[ 0, "desc" ]],
+                        "pageLength": 25,
+                        
+                        // ⚡ PERFORMANCE SETTINGS ⚡
+                        "deferRender": true,    // CRITICAL: Only render visible HTML
+                        "processing": true,     // Show "Processing..." indicator
+                        "orderClasses": false,  // Don't highlight sorted columns (Slow CSS)
+                        "autoWidth": false,     // Disable expensive math
+                        
+                        // Scroll Settings
+                        "scrollX": true,
+                        "scrollY": "60vh",
+                        "scrollCollapse": true,
+                        
+                        // Mobile Sticky Column
+                        "fixedColumns": { left: 1 },
+                        
+                        "language": { "search": "", "searchPlaceholder": "Search..." }
+                    });
+                } catch(e) { console.log("Error: " + e); }
             }
         });
     </script>
@@ -72,17 +99,15 @@ const DASHBOARD_TEMPLATE = mt"""
 """
 
 # ==============================================================================
-# 2. 🎨 UTILS & VALIDATION
+# 2. 🎨 UTILS
 # ==============================================================================
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
 function get_cell_style(val)
     try
         num = val isa Number ? val : parse(Float64, string(val))
-        if num > 0
-            return "background-color: rgba(46, 204, 113, 0.3); color: white;"
-        elseif num < 0
-            return "background-color: rgba(231, 76, 60, 0.3); color: white;"
+        if num > 0; return "background-color: rgba(46, 204, 113, 0.3); color: white;"
+        elseif num < 0; return "background-color: rgba(231, 76, 60, 0.3); color: white;"
         end
     catch; end
     return ""
@@ -102,9 +127,16 @@ function build_table_html(df::DataFrame, id::String)
     println(io, """<table id="$id" class="display compact stripe nowrap" style="width:100%">""")
     println(io, "<thead><tr>")
     
-    # Sanitize Headers
+    seen_headers = Set{String}()
     for col in names(df)
-        safe_col = replace(string(col), r"[^a-zA-Z0-9\s_\-\%\(\)]" => "") 
+        base_name = replace(string(col), r"[^a-zA-Z0-9\s_\-\%]" => "")
+        safe_col = base_name
+        count = 1
+        while safe_col in seen_headers
+            count += 1
+            safe_col = "$(base_name)_$count"
+        end
+        push!(seen_headers, safe_col)
         println(io, "<th>$safe_col</th>")
     end
     println(io, "</tr></thead>")
@@ -139,33 +171,21 @@ function main()
                     
                     println("Processing $file ...")
                     try
-                        # Loose strictness to prevent crashing on bad CSVs
                         df = CSV.read(joinpath(root, file), DataFrame; strict=false, silencewarnings=true)
-                        
                         valid, msg = is_valid_table(df)
-                        content = ""
                         
                         if valid
                             content = build_table_html(df, id)
+                            push!(table_list, Dict("title" => clean_name, "id" => id, "content" => content))
                         else
-                            @warn "⚠️ Skipping $file: $msg"
-                            content = """<div class="error-badge">⚠️ Data Not Available: $msg</div>"""
+                            @warn "Skipping $file"
                         end
-                        
-                        push!(table_list, Dict(
-                            "title" => clean_name,
-                            "id" => id,
-                            "content" => content
-                        ))
-                    catch e
-                        println("❌ Error processing $file: $e")
-                    end
+                    catch e; println("Error: $e"); end
                 end
             end
         end
     end
     
-    # Render with IST Time
     ist_time = get_ist()
     formatted_time = Dates.format(ist_time, "yyyy-mm-dd I:MM p") * " IST"
     
@@ -175,7 +195,7 @@ function main()
     ))
     
     open("public/index.html", "w") do io; write(io, final_html); end
-    println("✅ Dashboard generated.")
+    println("✅ Fast Dashboard generated.")
 end
 
 main()
