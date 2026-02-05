@@ -1,10 +1,12 @@
 name: Chartink Scraper (24/7) 📈
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:      # Allows manual trigger
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/5 * * * *' # Every 5 minutes
 
+# 🛡️ SAFETY: Prevents overlapping runs.
+# If a run is still going when the next 5-min slot hits, it queues (doesn't kill).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -13,62 +15,53 @@ permissions:
   contents: write
 
 jobs:
-  scrape-and-publish:
+  scrape-dashboard:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 10   # 🛡️ SAFETY: Kills job if hanging >10 mins
 
     steps:
-      - name: Checkout 🛠️
+      - name: Check out repository 🛎️
         uses: actions/checkout@v4
 
-      - name: Setup Julia 🚀
+      - name: Set up Julia (Latest) 🚀
         uses: julia-actions/setup-julia@v2
         with:
           version: '1'
 
-      - name: Cache Artifacts 💾
+      - name: Cache Julia artifacts 💾
         uses: julia-actions/cache@v2
 
-      - name: Install Deps 📦
-        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Launch Chrome 🚀
+      # ⚡ FAST SETUP: Uses the lockfiles (Project.toml/Manifest.toml)
+      - name: Instantiate Dependencies 📦
         run: |
-          google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 &
+          julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Start Headless Chrome 🚀
+        run: |
+          google-chrome --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1920,1080 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" &
+          echo "Chrome launching..."
           sleep 5
 
-      - name: Scrape Data 🕸️
+      - name: Run Scraper 🕸️
         run: julia --project=. scraper.jl
-
-      - name: Build Dashboard 📊
-        run: julia --project=. dashboard.jl
-
-      - name: Deploy to Pages 🌐
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./public
-          keep_files: true
 
       - name: Commit and Push Data 💾
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 1. Stage EVERYTHING (Data, Manifest.toml, Public folder)
-          # This prevents the "Unstaged changes" error during rebase
-          git add .
-          
-          # 2. Check if there are changes to commit
-          if git diff --staged --quiet; then
-              echo "No changes to commit."
+          # 1. Check & Commit FIRST
+          if [ -d "chartink_data" ]; then
+             git add .
+             timestamp=$(date -u)
+             git commit -m "📈 Data Update: ${timestamp}" || echo "No changes to commit"
           else
-              timestamp=$(date -u)
-              git commit -m "📈 Data & Dashboard Update: ${timestamp}"
-              
-              # 3. Pull & Rebase (Safe now because directory is clean)
-              git pull --rebase
-              
-              # 4. Push
-              git push
+             echo "⚠️ No data folder generated."
+             exit 0
           fi
+          
+          # 2. Pull Latest Changes (Rebase to prevent conflicts)
+          git pull --rebase
+          
+          # 3. Push
+          git push
