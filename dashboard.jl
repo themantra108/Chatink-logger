@@ -1,11 +1,9 @@
 using CSV, DataFrames, Dates, Printf
-using PrettyTables
 using Mustache
 
 # ==============================================================================
-# 1. 📄 THE TEMPLATE (Mustache)
+# 1. 📄 THE TEMPLATE
 # ==============================================================================
-# This separates your HTML/JS from your Julia Code. Cleaner & safer.
 const DASHBOARD_TEMPLATE = mt"""
 <!DOCTYPE html>
 <html lang="en">
@@ -23,9 +21,10 @@ const DASHBOARD_TEMPLATE = mt"""
         h3 { margin-top: 0; color: #bb86fc; border-bottom: 1px solid #333; padding-bottom: 10px; }
         .timestamp { text-align: center; color: #666; font-size: 0.8rem; margin-bottom: 20px; }
 
-        /* PrettyTables Output Fixes */
+        /* Table Styles */
         table.dataTable { font-size: 0.85rem; }
         table.dataTable td { padding: 6px 8px; border-bottom: 1px solid #2d2d2d; }
+        table.dataTable thead th { background-color: #2c2c2c; border-bottom: 2px solid #555; }
     </style>
     
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -60,46 +59,63 @@ const DASHBOARD_TEMPLATE = mt"""
 """
 
 # ==============================================================================
-# 2. 🎨 HEATMAP LOGIC (The PrettyTables Way)
+# 2. 🎨 COLOR LOGIC
 # ==============================================================================
-
-# Helper to check if a value is a number and positive/negative
-function is_pos(data, i, j)
+function get_cell_style(val)
+    # Try to parse as number
     try
-        val = data[i, j]
-        return val isa Number && val > 0
-    catch; return false; end
+        num = val isa Number ? val : parse(Float64, string(val))
+        if num > 0
+            # Green (with transparency)
+            return "background-color: rgba(46, 204, 113, 0.3); color: white;"
+        elseif num < 0
+            # Red (with transparency)
+            return "background-color: rgba(231, 76, 60, 0.3); color: white;"
+        end
+    catch
+        # Not a number, ignore
+    end
+    return ""
 end
 
-function is_neg(data, i, j)
-    try
-        val = data[i, j]
-        return val isa Number && val < 0
-    catch; return false; end
+# ==============================================================================
+# 3. 🏗️ BUILDER (No Dependencies)
+# ==============================================================================
+function build_table_html(df::DataFrame, id::String)
+    io = IOBuffer()
+    # Write Table Header
+    println(io, """<table id="$id" class="display compact stripe nowrap" style="width:100%">""")
+    println(io, "<thead><tr>")
+    for col in names(df)
+        println(io, "<th>$col</th>")
+    end
+    println(io, "</tr></thead>")
+    
+    # Write Body
+    println(io, "<tbody>")
+    for row in eachrow(df)
+        println(io, "<tr>")
+        for col in names(df)
+            val = row[col]
+            style = get_cell_style(val)
+            
+            # Format numbers neatly
+            clean_val = val
+            if val isa Real
+                 clean_val = @sprintf("%.2f", val)
+            end
+            
+            println(io, "<td style='$style'>$clean_val</td>")
+        end
+        println(io, "</tr>")
+    end
+    println(io, "</tbody></table>")
+    return String(take!(io))
 end
-
-# Define Highlighters
-# Green Background for Positive
-hl_pos = Highlighter(
-    (data, i, j) -> is_pos(data, i, j),
-    HTMLDecoration(background = "rgba(46, 204, 113, 0.3)", color = "white")
-)
-
-# Red Background for Negative
-hl_neg = Highlighter(
-    (data, i, j) -> is_neg(data, i, j),
-    HTMLDecoration(background = "rgba(231, 76, 60, 0.3)", color = "white")
-)
-
-# ==============================================================================
-# 3. 🏗️ BUILD PIPELINE
-# ==============================================================================
 
 function main()
     mkpath("public")
     data_dir = "chartink_data"
-    
-    # Store table objects for Mustache
     table_list = Dict{String, String}[]
     
     if isdir(data_dir)
@@ -113,24 +129,13 @@ function main()
                     try
                         df = CSV.read(joinpath(root, file), DataFrame)
                         
-                        # GENERATE HTML USING PRETTYTABLES
-                        # This replaces the manual loop we wrote before.
-                        html_str = pretty_table(
-                            String, 
-                            df; 
-                            backend = Val(:html), 
-                            highlighters = (hl_pos, hl_neg),
-                            table_class = "display compact stripe nowrap",
-                            table_style = Dict("width" => "100%"),
-                            html_id = id,
-                            standalone = false, # We only want the <table> tag, not <html>
-                            show_row_number = false
-                        )
+                        # Generate HTML Manually (Safe & Fast)
+                        html_content = build_table_html(df, id)
                         
                         push!(table_list, Dict(
                             "title" => clean_name,
                             "id" => id,
-                            "content" => html_str
+                            "content" => html_content
                         ))
                     catch e
                         println("Error: $e")
@@ -140,8 +145,6 @@ function main()
         end
     end
     
-    # RENDER THE PAGE
-    # Combine the Template + The Data
     final_html = render(DASHBOARD_TEMPLATE, Dict(
         "last_updated" => string(now(Dates.UTC)) * " UTC",
         "tables" => table_list
@@ -150,7 +153,7 @@ function main()
     open("public/index.html", "w") do io
         write(io, final_html)
     end
-    println("✅ Pro Dashboard generated.")
+    println("✅ Dashboard generated (Manual Mode).")
 end
 
 main()
