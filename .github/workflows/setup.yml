@@ -31,9 +31,6 @@ jobs:
             Pkg.add("JSON")
             Pkg.add("DataFrames")
             Pkg.add("CSV")
-            Pkg.add("Printf")
-            Pkg.add("Mustache")
-            Pkg.add(["Gumbo","Cascadia"])
             
             # 2. Lock Versions (Generates Manifest.toml)
             Pkg.resolve()
