@@ -2,7 +2,7 @@ using CSV, DataFrames, Dates, Printf
 using Mustache
 
 # ==============================================================================
-# 1. 📄 THE TEMPLATE (Solid Backgrounds Fix)
+# 1. 📄 THE TEMPLATE (Scrollable & Clean)
 # ==============================================================================
 const DASHBOARD_TEMPLATE = mt"""
 <!DOCTYPE html>
@@ -24,41 +24,41 @@ const DASHBOARD_TEMPLATE = mt"""
             border-radius: 8px; 
             padding: 10px; 
             margin-bottom: 20px;
-            overflow: hidden; /* Stops content from bleeding out */
+            overflow: hidden; 
         }
         h3 { margin-top: 0; color: #bb86fc; border-bottom: 1px solid #333; padding-bottom: 10px; }
         .timestamp { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
         .header-container { text-align: center; }
 
-        /* --- 🔧 THE FIX: Z-INDEX & BACKGROUNDS --- */
-        
-        /* 1. Force the Header to be Solid Dark Grey (No Transparency) */
+        /* --- STICKY & SCROLLING FIXES --- */
         table.dataTable thead th { 
             background-color: #2c2c2c !important; 
             color: #ffffff;
             border-bottom: 2px solid #555;
-            z-index: 100; /* Sit on top of everything */
+            z-index: 100;
             position: sticky;
+            top: 0;
         }
 
-        /* 2. Force the Sticky First Column to be Solid (Matches Card Color) */
+        /* Sticky First Column */
         table.dataTable tbody tr td:first-child {
-            background-color: #1e1e1e !important; /* Must match card background */
+            background-color: #1e1e1e !important;
             position: sticky;
             left: 0;
-            z-index: 50; /* Sit on top of other cells */
-            border-right: 2px solid #333; /* Visual separator */
+            z-index: 50;
+            border-right: 2px solid #333;
         }
 
-        /* 3. Handle Stripe Rows (Alternating Colors) for the Sticky Column */
-        table.dataTable.stripe tbody tr.odd td:first-child {
-            background-color: #1e1e1e !important; /* Keep it consistent or slightly lighter if you want */
+        /* Prevent Text Wrapping (Forces Horizontal Scroll) */
+        table.dataTable td, table.dataTable th {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 300px; /* Safety limit for super long text */
         }
 
-        /* Standard Cell Styling */
         table.dataTable td { padding: 8px 10px; border-bottom: 1px solid #2d2d2d; }
-        table.dataTable { border-collapse: separate; border-spacing: 0; }
-        
+        table.dataTable { border-collapse: separate; border-spacing: 0; width: 100% !important; }
     </style>
     
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -78,12 +78,11 @@ const DASHBOARD_TEMPLATE = mt"""
     </div>
     <script>
         $(document).ready(function () {
-            $.fn.dataTable.ext.errMode = 'none'; // Suppress warnings
-            
+            $.fn.dataTable.ext.errMode = 'none';
             if (document.getElementById('{{id}}')) {
                 try {
                     $('#{{id}}').DataTable({
-                        "order": [[ 0, "desc" ]],
+                        "order": [], // Disable initial sorting
                         "pageLength": 25,
                         "deferRender": true,
                         "processing": true,
@@ -93,10 +92,8 @@ const DASHBOARD_TEMPLATE = mt"""
                         "scrollY": "60vh",
                         "scrollCollapse": true,
                         
-                        // Sticky Columns Plugin
-                        "fixedColumns": {
-                            left: 1 // Locks the first column
-                        },
+                        // Sticky Columns
+                        "fixedColumns": { left: 1 },
                         
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
@@ -134,6 +131,11 @@ end
 # 3. 🏗️ BUILDER
 # ==============================================================================
 function build_table_html(df::DataFrame, id::String)
+    # 🗑️ REMOVE TIMESTAMP COLUMN
+    if "Timestamp" in names(df)
+        select!(df, Not("Timestamp"))
+    end
+
     io = IOBuffer()
     println(io, """<table id="$id" class="display compact stripe nowrap" style="width:100%">""")
     println(io, "<thead><tr>")
@@ -205,7 +207,7 @@ function main()
     ))
     
     open("public/index.html", "w") do io; write(io, final_html); end
-    println("✅ Solid-Background Dashboard generated.")
+    println("✅ Dashboard generated (Timestamp Removed).")
 end
 
 main()
