@@ -1,120 +1,73 @@
-using CSV, DataFrames, Dates, Printf
-using Mustache
+using CSV, DataFrames, Dates, Printf, Mustache
 
 # ==============================================================================
-# 1. 📄 THE TEMPLATE
+# 1. 🎨 RULES & STYLES (The "Functional" Way)
 # ==============================================================================
-const DASHBOARD_TEMPLATE = mt"""
+const STYLE_R = "background-color: rgba(231, 76, 60, 0.5); color: white;"
+const STYLE_G = "background-color: rgba(46, 204, 113, 0.5); color: white;"
+const STYLE_Y = "background-color: rgba(241, 196, 15, 0.5); color: white;"
+
+# Define Rules as Data: (Regex Pattern, Function(value) -> Style)
+const COLOR_RULES = [
+    (r"4\.5r",          v -> v > 400 ? STYLE_Y : v >= 200 ? STYLE_G : v < 50 ? STYLE_R : ""),
+    (r"(4\.5|20|50)chg",v -> v < -20 ? STYLE_R : v > 20   ? STYLE_G : ""),
+    (r"20r",            v -> v < 50  ? STYLE_R : v > 75   ? STYLE_G : ""),
+    (r"50r",            v -> v < 60  ? STYLE_R : v > 85   ? STYLE_G : "")
+]
+
+function get_style(col::String, val)
+    v = tryparse(Float64, string(val))
+    isnothing(v) && return ""
+    
+    c = replace(lowercase(col), " " => "")
+    # Find first matching rule and apply it
+    for (pattern, rule) in COLOR_RULES
+        occursin(pattern, c) && return rule(v)
+    end
+    return ""
+end
+
+# ==============================================================================
+# 2. 🧱 HTML GENERATION
+# ==============================================================================
+const TEMPLATE = mt"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chartink Pro</title>
-    
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/fixedcolumns/4.2.2/css/fixedColumns.dataTables.min.css">
-    
     <style>
         body { font-family: -apple-system, sans-serif; background: #121212; color: #e0e0e0; padding: 10px; }
+        .card { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 10px; margin-bottom: 20px; overflow: hidden; }
+        h3 { color: #bb86fc; border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 0; }
+        .ts { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
         
-        .card { 
-            background: #1e1e1e; 
-            border: 1px solid #333; 
-            border-radius: 8px; 
-            padding: 10px; 
-            margin-bottom: 20px;
-            overflow: hidden; 
-        }
-        h3 { margin-top: 0; color: #bb86fc; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .timestamp { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
-        .header-container { text-align: center; }
-
-        /* --- STICKY HEADERS --- */
-        table.dataTable thead th { 
-            background-color: #2c2c2c !important; 
-            color: #ffffff;
-            border-bottom: 2px solid #555;
-            z-index: 100;
-            position: sticky;
-            top: 0;
-        }
-
-        /* --- ALTERNATING ROW COLORS (ZEBRA STRIPING) --- */
-        /* Even Rows */
-        table.dataTable tbody tr.even { background-color: #1e1e1e !important; }
-        table.dataTable tbody tr.even td:first-child { background-color: #1e1e1e !important; }
-
-        /* Odd Rows */
-        table.dataTable tbody tr.odd { background-color: #2a2a2a !important; }
-        table.dataTable tbody tr.odd td:first-child { background-color: #2a2a2a !important; }
-
-        /* --- STICKY FIRST COLUMN --- */
-        table.dataTable tbody tr td:first-child {
-            position: sticky;
-            left: 0;
-            z-index: 50;
-            border-right: 2px solid #444;
-            color: #ffffff;
-            font-weight: 500;
-        }
-
-        /* --- CELL FORMATTING --- */
-        table.dataTable td, table.dataTable th {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 300px;
-        }
-        table.dataTable td { padding: 8px 10px; border-bottom: 1px solid #333; }
-        table.dataTable { border-collapse: separate; border-spacing: 0; width: 100% !important; }
-
-        /* --- RESIZABLE SCROLL AREA --- */
-        .dataTables_scrollBody {
-            resize: vertical !important; 
-            border-bottom: 3px solid #444; 
-            transform: translateZ(0);
-            -webkit-overflow-scrolling: touch; 
-        }
-        .dataTables_scrollBody::-webkit-scrollbar { width: 12px; height: 12px; }
-        .dataTables_scrollBody::-webkit-scrollbar-track { background: #1a1a1a; }
-        .dataTables_scrollBody::-webkit-scrollbar-thumb { background: #444; border-radius: 6px; border: 2px solid #1a1a1a; }
+        /* DataTable Styles */
+        table.dataTable thead th { background: #2c2c2c !important; color: #fff; position: sticky; top: 0; z-index: 100; }
+        table.dataTable tbody tr td:first-child { position: sticky; left: 0; z-index: 50; border-right: 2px solid #444; font-weight: 500; }
+        table.dataTable tbody tr.even, table.dataTable tbody tr.even td:first-child { background: #1e1e1e !important; }
+        table.dataTable tbody tr.odd, table.dataTable tbody tr.odd td:first-child { background: #2a2a2a !important; }
+        table.dataTable td { white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; padding: 8px 10px; border-bottom: 1px solid #333; }
+        
+        /* Resize & Scroll */
+        .dataTables_scrollBody { resize: vertical !important; border-bottom: 3px solid #444; min-height: 200px; }
     </style>
-    
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/fixedcolumns/4.2.2/js/dataTables.fixedColumns.min.js"></script>
 </head>
 <body>
-    <div class="header-container">
-        <h1>📊 Market Dashboard</h1>
-        <div class="timestamp">Last Updated: {{last_updated}}</div>
-    </div>
-
+    <div style="text-align:center"><h1>📊 Market Dashboard</h1><div class="ts">Last Updated: {{time}}</div></div>
     {{#tables}}
-    <div class="card">
-        <h3>{{title}}</h3>
-        {{{content}}}
-    </div>
+    <div class="card"><h3>{{title}}</h3>{{{content}}}</div>
     <script>
-        $(document).ready(function () {
+        $(document).ready(() => {
             $.fn.dataTable.ext.errMode = 'none';
-            if (document.getElementById('{{id}}')) {
-                try {
-                    $('#{{id}}').DataTable({
-                        "order": [],
-                        "paging": false,       // Infinite Scroll
-                        "info": false,         // Hide footer info
-                        "deferRender": false,  // Stable rendering
-                        "processing": false,
-                        "scrollX": true,
-                        "scrollY": "50vh",     // Resizable Height
-                        "scrollCollapse": true,
-                        "fixedColumns": { left: 1 },
-                        "stripeClasses": ['odd', 'even'],
-                        "language": { "search": "", "searchPlaceholder": "Search..." }
-                    });
-                } catch(e) { console.log(e); }
+            if(document.getElementById('{{id}}')) {
+                try { $('#{{id}}').DataTable({ paging: false, info: false, scrollX: true, scrollY: '50vh', scrollCollapse: true, fixedColumns: {left: 1}, stripeClasses: ['odd','even'] }); } catch(e){}
             }
         });
     </script>
@@ -123,144 +76,82 @@ const DASHBOARD_TEMPLATE = mt"""
 </html>
 """
 
-# ==============================================================================
-# 2. 🧠 COLOR RULES
-# ==============================================================================
-const COL_RED    = "background-color: rgba(231, 76, 60, 0.5); color: white;"
-const COL_GREEN  = "background-color: rgba(46, 204, 113, 0.5); color: white;"
-const COL_YELLOW = "background-color: rgba(241, 196, 15, 0.5); color: white;"
-
-function get_cell_style(col_name::String, val)
-    num = tryparse(Float64, string(val))
-    if isnothing(num); return ""; end
-
-    col = replace(lowercase(string(col_name)), " " => "")
-
-    # Rule: 4.5r
-    if occursin("4.5r", col)
-        if num > 400; return COL_YELLOW;
-        elseif num >= 200; return COL_GREEN;
-        elseif num < 50; return COL_RED; end
-
-    # Rule: Change Columns
-    elseif any(x -> occursin(x, col), ["4.5chg", "20chg", "50chg"])
-        if num < -20; return COL_RED;
-        elseif num > 20; return COL_GREEN; end
-
-    # Rule: 20r
-    elseif occursin("20r", col)
-        if num < 50; return COL_RED;
-        elseif num > 75; return COL_GREEN; end
-
-    # Rule: 50r
-    elseif occursin("50r", col)
-        if num < 60; return COL_RED;
-        elseif num > 85; return COL_GREEN; end
+function build_html_table(df::DataFrame, id::String)
+    "Timestamp" in names(df) && select!(df, Not("Timestamp"))
+    
+    # Header cleaning
+    headers = names(df)
+    safe_headers = String[]
+    seen = Set{String}()
+    for h in headers
+        base = replace(string(h), r"[^a-zA-Z0-9\s_\-\%\.]" => "")
+        safe = base
+        c = 1
+        while safe in seen; safe = "$(base)_$c"; c += 1; end
+        push!(seen, safe); push!(safe_headers, safe)
     end
-    
-    return ""
-end
 
-get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
-
-# ==============================================================================
-# 3. 🛡️ VALIDATION (Junk Removal)
-# ==============================================================================
-function is_valid_table(df::DataFrame)
-    if nrow(df) == 0; return false, "Empty Dataset"; end
-    if ncol(df) < 2; return false, "Malformed (< 2 Cols)"; end
-    
-    # 🗑️ Filter out Chartink 'Clause' tables
-    first_val = string(df[1,1])
-    if occursin("#", first_val) || occursin("*", first_val) || occursin("Clause", first_val)
-        return false, "Junk Widget"; 
-    end
-    
-    return true, "OK"
-end
-
-# ==============================================================================
-# 4. 🏗️ BUILDER
-# ==============================================================================
-function build_table_html(df::DataFrame, id::String)
-    if "Timestamp" in names(df); select!(df, Not("Timestamp")); end
-
+    # Build HTML String efficiently
     io = IOBuffer()
-    println(io, """<table id="$id" class="display compact stripe nowrap" style="width:100%">""")
-    println(io, "<thead><tr>")
+    print(io, "<table id='$id' class='display compact stripe nowrap' style='width:100%'><thead><tr>")
+    foreach(h -> print(io, "<th>$h</th>"), safe_headers)
+    print(io, "</tr></thead><tbody>")
     
-    seen_headers = Set{String}()
-    for col in names(df)
-        # Allow dots for "4.5r"
-        base_name = replace(string(col), r"[^a-zA-Z0-9\s_\-\%\.]" => "")
-        safe_col = base_name
-        count = 1
-        while safe_col in seen_headers
-            count += 1
-            safe_col = "$(base_name)_$count"
-        end
-        push!(seen_headers, safe_col)
-        println(io, "<th>$safe_col</th>")
-    end
-    println(io, "</tr></thead>")
-    
-    println(io, "<tbody>")
     for row in eachrow(df)
-        println(io, "<tr>")
-        for col in names(df)
-            val = row[col]
-            style = get_cell_style(string(col), val)
-            clean_val = val isa Real ? @sprintf("%.2f", val) : val
-            if ismissing(clean_val); clean_val = "-"; end
-            println(io, "<td style='$style'>$clean_val</td>")
+        print(io, "<tr>")
+        for (col, val) in pairs(row)
+            # Apply Style & Format Number
+            sty = get_style(string(col), val)
+            fmt_val = val isa Real ? @sprintf("%.2f", val) : ismissing(val) ? "-" : val
+            print(io, "<td style='$sty'>$fmt_val</td>")
         end
-        println(io, "</tr>")
+        print(io, "</tr>")
     end
-    println(io, "</tbody></table>")
+    print(io, "</tbody></table>")
     return String(take!(io))
 end
 
+# ==============================================================================
+# 3. 🚀 MAIN PIPELINE
+# ==============================================================================
 function main()
     mkpath("public")
     data_dir = "chartink_data"
-    table_list = Dict{String, String}[]
-    
+    tables = Dict{String, String}[]
+
+    # Find all CSVs recursively
+    files = []
     if isdir(data_dir)
-        for (root, dirs, files) in walkdir(data_dir)
-            for file in files
-                if endswith(file, ".csv")
-                    clean_name = replace(file, ".csv" => "")
-                    id = "tbl_" * replace(clean_name, r"[^a-zA-Z0-9]" => "")
-                    
-                    println("Processing $file ...")
-                    try
-                        df = CSV.read(joinpath(root, file), DataFrame; strict=false, silencewarnings=true)
-                        
-                        # Check validity before building
-                        valid, msg = is_valid_table(df)
-                        
-                        if valid
-                            content = build_table_html(df, id)
-                            push!(table_list, Dict("title" => clean_name, "id" => id, "content" => content))
-                        else
-                            @warn "Skipping $file: $msg"
-                        end
-                    catch e; println("Error: $e"); end
-                end
-            end
+        for (root, _, fs) in walkdir(data_dir)
+            append!(files, joinpath.(root, filter(endswith(".csv"), fs)))
         end
     end
-    
-    ist_time = get_ist()
-    formatted_time = Dates.format(ist_time, "yyyy-mm-dd I:MM p") * " IST"
-    
-    final_html = render(DASHBOARD_TEMPLATE, Dict(
-        "last_updated" => formatted_time,
-        "tables" => table_list
-    ))
-    
-    open("public/index.html", "w") do io; write(io, final_html); end
-    println("✅ Dashboard generated.")
+
+    for file in files
+        println("Processing $file...")
+        try
+            df = CSV.read(file, DataFrame; strict=false, silencewarnings=true)
+            
+            # Short-circuit Validation
+            (nrow(df) == 0 || ncol(df) < 2) && continue
+            occursin(r"(#|\*|Clause)", string(df[1,1])) && continue # Junk filter
+            
+            clean_name = replace(basename(file), ".csv" => "")
+            id = "tbl_" * replace(clean_name, r"[^a-zA-Z0-9]" => "")
+            
+            push!(tables, Dict(
+                "title" => clean_name, 
+                "id" => id, 
+                "content" => build_html_table(df, id)
+            ))
+        catch e
+            @warn "Failed $file: $e"
+        end
+    end
+
+    ist_time = Dates.format(now(Dates.UTC) + Hour(5) + Minute(30), "yyyy-mm-dd I:MM p") * " IST"
+    write("public/index.html", render(TEMPLATE, Dict("time" => ist_time, "tables" => tables)))
+    println("✅ Concise Dashboard Generated.")
 end
 
 main()
