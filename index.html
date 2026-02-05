@@ -23,7 +23,7 @@
         .timestamp { text-align: center; color: #4db6ac; margin-bottom: 20px; font-weight: bold; }
         .header-container { text-align: center; }
 
-        /* --- STICKY HEADERS & COLUMNS --- */
+        /* --- STICKY HEADERS --- */
         table.dataTable thead th { 
             background-color: #2c2c2c !important; 
             color: #ffffff;
@@ -33,12 +33,32 @@
             top: 0;
         }
 
+        /* --- ALTERNATING ROW COLORS (ZEBRA STRIPING) --- */
+        
+        /* 1. Even Rows (Darker) */
+        table.dataTable tbody tr.even {
+            background-color: #1e1e1e !important; 
+        }
+        table.dataTable tbody tr.even td:first-child {
+            background-color: #1e1e1e !important; /* Sticky col matches row */
+        }
+
+        /* 2. Odd Rows (Lighter) */
+        table.dataTable tbody tr.odd {
+            background-color: #2a2a2a !important; 
+        }
+        table.dataTable tbody tr.odd td:first-child {
+            background-color: #2a2a2a !important; /* Sticky col matches row */
+        }
+
+        /* --- STICKY COLUMN POSITIONING --- */
         table.dataTable tbody tr td:first-child {
-            background-color: #1e1e1e !important;
             position: sticky;
             left: 0;
             z-index: 50;
-            border-right: 2px solid #333;
+            border-right: 2px solid #444; /* Subtle separator */
+            color: #ffffff;
+            font-weight: 500;
         }
 
         /* --- CELL FORMATTING --- */
@@ -48,10 +68,10 @@
             text-overflow: ellipsis;
             max-width: 300px;
         }
-        table.dataTable td { padding: 8px 10px; border-bottom: 1px solid #2d2d2d; }
+        table.dataTable td { padding: 8px 10px; border-bottom: 1px solid #333; }
         table.dataTable { border-collapse: separate; border-spacing: 0; width: 100% !important; }
 
-        /* --- RESIZABLE SCROLL AREA --- */
+        /* --- SCROLLBARS --- */
         .dataTables_scrollBody {
             resize: vertical !important; 
             border-bottom: 3px solid #444; 
@@ -70,7 +90,7 @@
 <body>
     <div class="header-container">
         <h1>📊 Market Dashboard</h1>
-        <div class="timestamp">Last Updated: 2026-02-05 12:49 PM IST</div>
+        <div class="timestamp">Last Updated: 2026-02-05 1:08 PM IST</div>
     </div>
 
     <div class="card">
@@ -763,19 +783,15 @@
                 try {
                     $('#tbl_1dayCheck').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -916,19 +932,15 @@
                 try {
                     $('#tbl_3dayCheck').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -1156,19 +1168,15 @@
                 try {
                     $('#tbl_4dayCheck').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -1357,19 +1365,15 @@
                 try {
                     $('#tbl_5dayCheck').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -1740,19 +1744,15 @@
                 try {
                     $('#tbl_7dayCheck').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -2277,19 +2277,15 @@
                 try {
                     $('#tbl_7daysignal').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -2328,19 +2324,15 @@
                 try {
                     $('#tbl_ATLAS').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -2961,19 +2953,15 @@
                 try {
                     $('#tbl_Aboutto').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -3009,19 +2997,15 @@
                 try {
                     $('#tbl_EpisodicPivot').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -3364,19 +3348,15 @@
                 try {
                     $('#tbl_Firsttimer').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -4907,19 +4887,15 @@
                 try {
                     $('#tbl_MMTMainScannerDaily').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -7892,19 +7868,15 @@
                 try {
                     $('#tbl_MOVINGAVERAGEALIGNMENT').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -9811,19 +9783,15 @@
                 try {
                     $('#tbl_Mktcondition').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -10134,19 +10102,15 @@
                 try {
                     $('#tbl_Mod5dayCheck').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -10783,19 +10747,15 @@
                 try {
                     $('#tbl_Mod7dayCheck').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -11068,19 +11028,15 @@
                 try {
                     $('#tbl_ModsignalRS').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -11801,19 +11757,15 @@
                 try {
                     $('#tbl_RS').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -13605,19 +13557,15 @@
                 try {
                     $('#tbl_RSRatingScore').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -17180,19 +17128,15 @@
                 try {
                     $('#tbl_funda').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -17231,19 +17175,15 @@
                 try {
                     $('#tbl_ATLAS').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
@@ -19150,19 +19090,15 @@
                 try {
                     $('#tbl_Mktcondition').DataTable({
                         "order": [],
-                        
-                        // 🛑 PAGINATION DISABLED (Infinite Scroll Mode)
                         "paging": false,
-                        "info": false,       // Hides "Showing 1 to X" text
-                        
-                        "deferRender": false, // Keep data loaded for smooth scroll
+                        "info": false,
+                        "deferRender": false,
                         "processing": false,
-                        
                         "scrollX": true,
-                        "scrollY": "50vh",    // Initial height (Resizable)
+                        "scrollY": "50vh", 
                         "scrollCollapse": true,
-                        
                         "fixedColumns": { left: 1 },
+                        "stripeClasses": ['odd', 'even'], // Enforce classes
                         "language": { "search": "", "searchPlaceholder": "Search..." }
                     });
                 } catch(e) { console.log(e); }
