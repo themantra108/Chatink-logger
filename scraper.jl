@@ -9,18 +9,10 @@ const TARGET_URLS = [
 ]
 const OUTPUT_ROOT = "chartink_data"
 
-# Navigation Safety Settings (Aggressive for Reliability)
-const NAV_SLEEP_SEC = 8          # Wait 8s for dashboard to fully render
-const MAX_WAIT_CYCLES = 60       # Timeout after 60s
-const SCROLL_STEP = 2000         # Smaller steps for better DOM triggering
-const SCROLL_SLEEP = 0.2         # Slower scroll
-
-# Regex & Map (Pre-compiled)
-const DATE_REGEX = r"(\d+)(?:st|nd|rd|th)?\s+([a-zA-Z]+)"
-const MONTH_MAP = Dict{SubString{String}, Int}(
-    "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4, "May" => 5, "Jun" => 6,
-    "Jul" => 7, "Aug" => 8, "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12
-)
+const NAV_SLEEP_SEC = 8          
+const MAX_WAIT_CYCLES = 60       
+const SCROLL_STEP = 2000         
+const SCROLL_SLEEP = 0.2         
 
 get_ist() = now(Dates.UTC) + Hour(5) + Minute(30)
 
@@ -44,62 +36,22 @@ end
 # 3. 📅 PARSING & LOGIC
 # ==============================================================================
 
-function parse_chartink_date(date_str::AbstractString)
-    m = match(DATE_REGEX, date_str)
-    if isnothing(m); return (0, 0); end
-    day = parse(Int, m.captures[1])
-    mon = get(MONTH_MAP, titlecase(m.captures[2])[1:3], 0)
-    return (day, mon)
-end
-
 function determine_strategy(df::DataFrame)
     return "Date" in names(df) ? TimeSeriesStrategy() : SnapshotStrategy()
 end
 
-# Enrichment: Time Series (Robust Year Inference)
-function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
-    nrows = nrow(df)
-    full_dates = Vector{Union{Date, Missing}}(missing, nrows)
-    scrape_date = Date(get_ist())
-    current_year = year(scrape_date)
-    last_month = month(scrape_date) 
-
-    date_col = df.Date
-
-    @inbounds for i in 1:nrows
-        raw_val = string(date_col[i])
-        (day, mon) = parse_chartink_date(raw_val)
-        if day == 0 || mon == 0; continue; end
-
-        # Year Rollback Logic (Detect Jan -> Dec transition)
-        if last_month < 3 && mon > 10
-            current_year -= 1
-        elseif last_month > 10 && mon < 3
-            current_year += 1 
-        end
-
-        try
-            cand = Date(current_year, mon, day)
-            # Future Guard: If inferred date is > 2 days in future, rollback year
-            if cand > (scrape_date + Day(2))
-                 cand = Date(current_year - 1, mon, day)
-                 current_year -= 1
-            end
-            full_dates[i] = cand
-        catch; end
-        last_month = mon
-    end
-    df[!, :Full_Date] = full_dates
-end
-
-# Enrichment: Snapshot (Scan_Date creation)
+# Snapshot enrichment (Scan_Date)
 function enrich_dataframe!(df::DataFrame, ::SnapshotStrategy)
     if "Timestamp" in names(df)
         df[!, :Scan_Date] = Date.(df[!, :Timestamp])
     end
 end
 
-# 🔥 JUNK FILTER
+# TimeSeries enrichment is no longer needed since Chartink provides the year
+function enrich_dataframe!(df::DataFrame, ::TimeSeriesStrategy)
+    # No-op: We trust the native 'Date' column now.
+end
+
 function is_junk_widget(df::DataFrame)
     if nrow(df) == 0; return true; end
     cols = names(df)
@@ -113,7 +65,7 @@ function is_junk_widget(df::DataFrame)
 end
 
 # ==============================================================================
-# 4. 💾 SAVING LOGIC (Manual & Robust)
+# 4. 💾 SAVING LOGIC
 # ==============================================================================
 
 function save_to_disk(w::WidgetTable, final_df::DataFrame)
@@ -126,7 +78,7 @@ function save_to_disk(w::WidgetTable, final_df::DataFrame)
     @info "  💾 Saved: [$(w.subfolder)] -> $(w.clean_name)"
 end
 
-# --- Snapshot Logic (Block Filter) ---
+# --- Snapshot Logic ---
 function save_widget(w::WidgetTable{SnapshotStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
     if !isfile(path); save_to_disk(w, w.data); return; end
@@ -141,7 +93,6 @@ function save_widget(w::WidgetTable{SnapshotStrategy})
     save_to_disk(w, vcat(w.data, old_df, cols=:union))
 end
 
-# Helper: Row Diff
 function has_row_changed(new_row, old_row, check_cols)
     for col in check_cols
         val_new = hasproperty(new_row, col) ? new_row[col] : missing
@@ -151,7 +102,7 @@ function has_row_changed(new_row, old_row, check_cols)
     return false
 end
 
-# --- Time Series Logic (Smart Upsert) ---
+# --- Time Series Logic ---
 function save_widget(w::WidgetTable{TimeSeriesStrategy})
     path = joinpath(OUTPUT_ROOT, w.subfolder, w.clean_name * ".csv")
     if !isfile(path); save_to_disk(w, w.data); return; end
@@ -159,15 +110,14 @@ function save_widget(w::WidgetTable{TimeSeriesStrategy})
     old_df = CSV.read(path, DataFrame)
     new_df = w.data
 
-    # ADDED "Date" to meta_cols so formatting changes ("19th Feb" vs "19th Feb'26") don't trigger updates
-    meta_cols = ["Timestamp", "Full_Date", "Scan_Date", "Date"]
+    meta_cols = ["Timestamp", "Date", "Scan_Date"]
     content_cols = filter(n -> !(n in meta_cols), names(new_df))
 
-    # Index History using Full_Date instead of raw Date string
+    # Index History using native Date string
     old_map = Dict{String, DataFrameRow}()
     for row in eachrow(old_df)
-        if hasproperty(row, :Full_Date) && !ismissing(row.Full_Date)
-            old_map[string(row.Full_Date)] = row
+        if hasproperty(row, :Date) && !ismissing(row.Date)
+            old_map[string(row.Date)] = row
         end
     end
 
@@ -175,29 +125,25 @@ function save_widget(w::WidgetTable{TimeSeriesStrategy})
     rows_to_keep = Int[]
     for i in 1:nrow(new_df)
         new_row = new_df[i, :]
+        if !hasproperty(new_row, :Date) || ismissing(new_row.Date); continue; end
         
-        # Skip if Full_Date failed to parse
-        if !hasproperty(new_row, :Full_Date) || ismissing(new_row.Full_Date)
-            continue
-        end
-        
-        d_key = string(new_row.Full_Date)
+        d_key = string(new_row.Date)
 
-        # Keep if Full_Date is new OR actual numeric content changed
         if !haskey(old_map, d_key) || has_row_changed(new_row, old_map[d_key], content_cols)
             push!(rows_to_keep, i)
         end
     end
 
-    if isempty(rows_to_keep); return; end # Skip write if no changes
+    if isempty(rows_to_keep); return; end 
 
     combined = vcat(new_df[rows_to_keep, :], old_df, cols=:union)
-    
-    # Sort by Timestamp descending so the newest pull is at the top
     sort!(combined, :Timestamp, rev=true)
-    
-    # Deduplicate strictly on the parsed Full_Date, discarding intraday duplicates
-    unique!(combined, :Full_Date)
+    unique!(combined, :Date) # Deduplicate entirely on the Chartink Date string
+
+    # Optional: If you want to drop the old Full_Date column if it exists in the old CSV
+    if "Full_Date" in names(combined)
+        select!(combined, Not(:Full_Date))
+    end
 
     save_to_disk(w, combined)
 end
@@ -279,12 +225,10 @@ const JS_PAYLOAD = """
             });
         };
 
-        // 1. Tables
         document.querySelectorAll("table, div.dataTables_wrapper").forEach(n => {
             if (n.tagName === "TABLE") scan([n]);
         });
         
-        // 2. Cards
         document.querySelectorAll("div.card").forEach(c => {
             const h = c.querySelector(".card-header, h1, h2, h3, h4, h5, h6");
             const t = c.querySelector("table");
@@ -361,7 +305,7 @@ function extract_and_parse(page, folder_name) :: Vector{WidgetTable}
                 if is_junk_widget(df); continue; end
 
                 strat = determine_strategy(df)
-                enrich_dataframe!(df, strat)
+                enrich_dataframe!(df, strat) # Now basically a pass-through
                 push!(widgets, WidgetTable(name, clean_name, df, folder_name, strat))
             catch; end
         end
