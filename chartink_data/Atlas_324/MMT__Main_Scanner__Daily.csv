@@ -1,40 +1,53 @@
 Timestamp,Symbol,From52wh,3d range,5d,Sector,Industry,Free float,Scan_Date
-2026-02-27T10:34:01.828,GRAPHITE,1.01,8.73,11.01,industrials,electrodes - graphites,5007.26,2026-02-27
-2026-02-27T10:34:01.828,VTL,1.69,4.63,9.54,textiles,textiles - cotton/blended,5559.62,2026-02-27
-2026-02-27T10:34:01.828,RRKABEL,1.91,5.7,10.36,industrials,cables - power,6712.59,2026-02-27
-2026-02-27T10:34:01.828,STLTECH,2.4,4.88,5.88,industrials,cables - telephone,4538.3,2026-02-27
-2026-02-27T10:34:01.828,PRECWIRE,2.66,4.99,7.99,metals & mining,mining / minerals / metals,2410.19,2026-02-27
-2026-02-27T10:34:01.828,BAJAJCON,4.29,5.34,9.7,fmcg,personal care - indian,2913.81,2026-02-27
-2026-02-27T10:34:01.828,GAEL,4.73,4.12,6.13,fmcg,miscellaneous,2355.65,2026-02-27
-2026-02-27T10:34:01.828,LGBBROSLTD,5.32,3.14,5.61,auto,bearings,4030.77,2026-02-27
-2026-02-27T10:34:01.828,SCI,5.43,4.29,6.41,transportation,shipping,4479.24,2026-02-27
-2026-02-27T10:34:01.828,CCL,5.96,5.64,7.27,fmcg,tea,7270.65,2026-02-27
-2026-02-27T10:34:01.828,GPIL,6.03,3.6,6.56,metals & mining,steel - medium / small,6663.95,2026-02-27
-2026-02-27T10:34:01.828,DCBBANK,6.94,4.2,4.68,bank,banks - private sector,5108.65,2026-02-27
-2026-02-27T10:34:01.828,CRAFTSMAN,7.07,4.74,6.78,auto,auto ancillaries,9348.28,2026-02-27
-2026-02-27T10:34:01.828,SJS,7.65,4.4,6.81,auto,plastics products,4488.37,2026-02-27
-2026-02-27T10:34:01.828,CIEINDIA,7.82,6.47,11.45,industrials,castings & forgings,6309.03,2026-02-27
-2026-02-27T10:34:01.828,KTKBANK,8.12,4.03,5.25,bank,banks - private sector,7657.34,2026-02-27
-2026-02-27T10:34:01.828,DYNAMATECH,8.74,8.45,8.45,industrials,engineering,3932.01,2026-02-27
-2026-02-27T10:34:01.828,SMLMAH,8.75,6.08,11.05,auto,automobiles - lcvs / hcvs,2897.65,2026-02-27
-2026-02-27T10:34:01.828,SHRIPISTON,8.83,5.09,9.41,auto,auto ancillaries,7696.89,2026-02-27
-2026-02-27T10:34:01.828,SUKHJITS,9.79,28.79,36.3,fmcg,miscellaneous,224.71,2026-02-27
-2026-02-27T10:34:01.828,PFOCUS,10.44,4.8,6.03,realty,miscellaneous,8016.67,2026-02-27
-2026-02-27T10:34:01.828,SAKAR,11.04,8.21,14.86,healthcare,pharmaceuticals - indian - bulk drugs & formln,531.79,2026-02-27
-2026-02-27T10:34:01.828,EDELWEISS,11.4,6.67,10.79,financials,finance & investments,7377.3,2026-02-27
-2026-02-27T10:34:01.828,GVPIL,11.78,8.11,13.38,realty,engineering - turnkey services,1028.81,2026-02-27
-2026-02-27T10:34:01.828,HEG,11.85,5.52,8.56,industrials,electrodes - graphites,5014.68,2026-02-27
-2026-02-27T10:34:01.828,BLISSGVS,12.07,6.62,10.33,healthcare,pharmaceuticals - indian - formulations,1466.51,2026-02-27
-2026-02-27T10:34:01.828,JPOLYINVST,12.28,8.47,14.4,financials,finance & investments,324.71,2026-02-27
-2026-02-27T10:34:01.828,BBOX,12.54,9.89,11.0,i.t,computers - software - medium / small,2733.19,2026-02-27
-2026-02-27T10:34:01.828,PASUPTAC,12.77,11.79,12.01,textiles,textiles - manmade,168.48,2026-02-27
-2026-02-27T10:34:01.828,PAISALO,13.5,4.47,6.38,financials,finance & investments,1911.04,2026-02-27
-2026-02-27T10:34:01.828,GODAVARIB,13.87,16.61,18.48,fmcg,sugar,563.93,2026-02-27
-2026-02-27T10:34:01.828,VIYASH,13.9,12.33,12.67,healthcare,pharmaceuticals - indian - bulk drugs & formln,3736.13,2026-02-27
-2026-02-27T10:34:01.828,CHENNPETRO,14.61,4.42,7.55,energy,refineries,4587.82,2026-02-27
-2026-02-27T10:34:01.828,TRIVENI,14.98,6.12,6.89,fmcg,sugar,3399.19,2026-02-27
-2026-02-27T10:34:01.828,APEX,16.01,9.23,13.69,fmcg,aquaculture,350.67,2026-02-27
-2026-02-27T10:34:01.828,RAIN,16.19,7.11,9.04,miscellaneous,miscellaneous,2917.9,2026-02-27
+2026-02-27T11:33:08.549,AEROFLEX,0.5,7.75,11.27,metals & mining,steel - medium / small,1006.57,2026-02-27
+2026-02-27T11:33:08.549,GRAPHITE,1.12,8.73,11.01,industrials,electrodes - graphites,5001.5,2026-02-27
+2026-02-27T11:33:08.549,RRKABEL,1.22,5.7,10.36,industrials,cables - power,6760.29,2026-02-27
+2026-02-27T11:33:08.549,VTL,2.0,4.63,9.54,textiles,textiles - cotton/blended,5542.14,2026-02-27
+2026-02-27T11:33:08.549,MBAPL,2.48,3.9,4.91,chemicals,fertilizers,1055.77,2026-02-27
+2026-02-27T11:33:08.549,STLTECH,2.94,4.88,5.88,industrials,cables - telephone,4513.08,2026-02-27
+2026-02-27T11:33:08.549,ABSLAMC,3.34,4.0,4.08,financials,finance & investments,6568.06,2026-02-27
+2026-02-27T11:33:08.549,HAPPYFORGE,3.68,4.03,5.47,industrials,castings & forgings,2676.2,2026-02-27
+2026-02-27T11:33:08.549,BAJAJCON,3.93,5.34,9.7,fmcg,personal care - indian,2924.98,2026-02-27
+2026-02-27T11:33:08.549,MRPL,4.44,4.99,7.57,energy,refineries,3898.58,2026-02-27
+2026-02-27T11:33:08.549,LGBBROSLTD,4.83,3.14,5.61,auto,bearings,4051.55,2026-02-27
+2026-02-27T11:33:08.549,GAEL,5.23,4.12,6.13,fmcg,miscellaneous,2343.38,2026-02-27
+2026-02-27T11:33:08.549,SCI,5.47,4.29,6.41,transportation,shipping,4477.22,2026-02-27
+2026-02-27T11:33:08.549,CCL,6.16,5.64,7.27,fmcg,tea,7254.82,2026-02-27
+2026-02-27T11:33:08.549,MASFIN,6.51,5.1,7.79,financials,finance & investments,1997.29,2026-02-27
+2026-02-27T11:33:08.549,GPIL,7.45,3.6,6.56,metals & mining,steel - medium / small,6563.44,2026-02-27
+2026-02-27T11:33:08.549,KTKBANK,8.05,4.03,5.25,bank,banks - private sector,7663.01,2026-02-27
+2026-02-27T11:33:08.549,SJS,8.24,5.0,7.42,auto,plastics products,4459.41,2026-02-27
+2026-02-27T11:33:08.549,CIEINDIA,8.29,6.62,11.45,industrials,castings & forgings,6277.15,2026-02-27
+2026-02-27T11:33:08.549,DBOL,8.34,6.6,12.34,fmcg,sugar,346.09,2026-02-27
+2026-02-27T11:33:08.549,DCBBANK,8.61,4.2,4.68,bank,banks - private sector,5017.03,2026-02-27
+2026-02-27T11:33:08.549,MMFL,8.63,5.54,7.01,industrials,castings & forgings,965.13,2026-02-27
+2026-02-27T11:33:08.549,SHRIPISTON,8.88,5.09,9.41,auto,auto ancillaries,7692.18,2026-02-27
+2026-02-27T11:33:08.549,DYNAMATECH,9.1,8.45,8.45,industrials,engineering,3916.61,2026-02-27
+2026-02-27T11:33:08.549,SMLMAH,9.27,6.85,11.05,auto,automobiles - lcvs / hcvs,2881.08,2026-02-27
+2026-02-27T11:33:08.549,RPTECH,10.03,8.93,8.93,services,trading,872.88,2026-02-27
+2026-02-27T11:33:08.549,PFOCUS,10.83,4.95,6.03,realty,miscellaneous,7981.66,2026-02-27
+2026-02-27T11:33:08.549,SUKHJITS,11.06,28.79,36.3,fmcg,miscellaneous,221.53,2026-02-27
+2026-02-27T11:33:08.549,EDELWEISS,11.73,7.54,11.69,financials,finance & investments,7349.91,2026-02-27
+2026-02-27T11:33:08.549,BBOX,12.05,9.89,11.0,i.t,computers - software - medium / small,2748.46,2026-02-27
+2026-02-27T11:33:08.549,ROSSTECH,12.28,11.72,11.82,aerospace & defence,engineering,699.88,2026-02-27
+2026-02-27T11:33:08.549,SAKAR,12.4,8.21,14.86,healthcare,pharmaceuticals - indian - bulk drugs & formln,523.71,2026-02-27
+2026-02-27T11:33:08.549,BLISSGVS,12.45,6.62,10.33,healthcare,pharmaceuticals - indian - formulations,1460.29,2026-02-27
+2026-02-27T11:33:08.549,HEG,12.54,5.52,8.56,industrials,electrodes - graphites,4975.31,2026-02-27
+2026-02-27T11:33:08.549,GODAVARIB,12.88,16.61,18.48,fmcg,sugar,570.41,2026-02-27
+2026-02-27T11:33:08.549,GVPIL,13.23,8.11,13.38,realty,engineering - turnkey services,1011.91,2026-02-27
+2026-02-27T11:33:08.549,TAKE,13.3,11.34,15.93,healthcare,miscellaneous,640.55,2026-02-27
+2026-02-27T11:33:08.549,ARVIND,13.55,4.99,9.34,textiles,textiles - cotton/blended,5535.37,2026-02-27
+2026-02-27T11:33:08.549,VIYASH,13.61,12.33,12.67,healthcare,pharmaceuticals - indian - bulk drugs & formln,3748.75,2026-02-27
+2026-02-27T11:33:08.549,NETWEB,13.64,11.66,15.78,i.t,computers - hardware,6356.05,2026-02-27
+2026-02-27T11:33:08.549,LUMAXIND,14.09,5.54,7.97,auto,auto ancillaries,1392.28,2026-02-27
+2026-02-27T11:33:08.549,PAISALO,14.12,4.47,6.38,financials,finance & investments,1897.27,2026-02-27
+2026-02-27T11:33:08.549,PASUPTAC,14.14,11.79,12.01,textiles,textiles - manmade,165.84,2026-02-27
+2026-02-27T11:33:08.549,TRIVENI,15.07,6.12,6.89,fmcg,sugar,3395.35,2026-02-27
+2026-02-27T11:33:08.549,CHENNPETRO,15.48,4.42,7.55,energy,refineries,4541.3,2026-02-27
+2026-02-27T11:33:08.549,RAIN,15.52,7.11,9.04,miscellaneous,miscellaneous,2941.05,2026-02-27
+2026-02-27T11:33:08.549,JPOLYINVST,16.16,13.32,19.51,financials,finance & investments,310.35,2026-02-27
+2026-02-27T11:33:08.549,APEX,17.12,10.11,14.6,fmcg,aquaculture,346.0,2026-02-27
+2026-02-27T11:33:08.549,GOKULAGRO,23.06,6.76,7.14,fmcg,solvent extraction,1295.42,2026-02-27
 2026-02-26T23:37:28.326,INDSWFTLAB,0.5,6.0,9.27,healthcare,pharmaceuticals - indian - bulk drugs & formln,737.45,2026-02-26
 2026-02-26T23:37:28.326,GRAPHITE,0.85,9.44,9.44,industrials,electrodes - graphites,4944.28,2026-02-26
 2026-02-26T23:37:28.326,SMSPHARMA,1.23,7.12,11.15,healthcare,pharmaceuticals - indian - bulk drugs,1164.58,2026-02-26
