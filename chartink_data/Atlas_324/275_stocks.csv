@@ -1,84 +1,84 @@
 Timestamp,Symbol,From52wh,3d range,5d,Sector,Industry,Free float,Scan_Date
-2026-08-20T00:18:24.7,BLISSGVS,0.0,14.47,15.66,healthcare,pharmaceuticals - indian - formulations,3954.98,2026-08-20
-2026-08-20T00:18:24.7,SALSTEEL,0.0,18.91,27.06,metals & mining,steel - sponge iron,332.76,2026-08-20
-2026-08-20T00:18:24.7,MODISONLTD,0.05,10.24,26.43,industrials,electric equipment,608.23,2026-08-20
-2026-08-20T00:18:24.7,TFCILTD,0.44,14.77,15.01,financials,finance - term-lending institutions,5850.01,2026-08-20
-2026-08-20T00:18:24.7,DALMIASUG,0.67,12.38,16.93,fmcg,sugar,965.61,2026-08-20
-2026-08-20T00:18:24.7,WELSPUNLIV,0.91,10.92,15.02,textiles,textiles - products,5760.04,2026-08-20
-2026-08-20T00:18:24.7,ADOR,0.93,8.52,11.58,industrials,electrodes - welding equipment,1315.43,2026-08-20
-2026-08-20T00:18:24.7,STYLEBAAZA,1.0,10.23,23.39,consumer discretionary,trading,1775.99,2026-08-20
-2026-08-20T00:18:24.7,AVALON,1.05,16.5,18.69,consumer discretionary,electronics - components,8343.27,2026-08-20
-2026-08-20T00:18:24.7,ASIANENE,1.05,30.07,32.06,energy,oil drilling / allied services,1021.16,2026-08-20
-2026-08-20T00:18:24.7,PRUDENT,1.18,4.48,5.34,financials,finance & investments,6279.95,2026-08-20
-2026-08-20T00:18:24.7,RISHABH,1.25,13.52,13.52,industrials,electric equipment,815.83,2026-08-20
-2026-08-20T00:18:24.7,HAPPYFORGE,1.37,10.63,17.79,industrials,castings & forgings,4692.23,2026-08-20
-2026-08-20T00:18:24.7,SCPL,1.56,9.3,18.74,fmcg,food - processing - indian,213.06,2026-08-20
-2026-08-20T00:18:24.7,RPEL,1.66,18.73,28.91,building materials,refractories / intermediates,2790.02,2026-08-20
-2026-08-20T00:18:24.7,MPSLTD,1.66,5.84,8.22,i.t,computers - software - medium / small,1586.44,2026-08-20
-2026-08-20T00:18:24.7,THELEELA,1.66,8.77,8.77,services,hotels,4286.9,2026-08-20
-2026-08-20T00:18:24.7,UTTAMSUGAR,1.89,16.49,22.32,fmcg,sugar,290.31,2026-08-20
-2026-08-20T00:18:24.7,GULFPETRO,1.93,10.88,11.66,chemicals,chemicals,207.35,2026-08-20
-2026-08-20T00:18:24.7,GHCLTEXTIL,1.94,10.11,12.76,textiles,textiles - spinning - synthetic / blended,976.21,2026-08-20
-2026-08-20T00:18:24.7,APOLLOPIPE,2.13,16.41,16.74,plastic products,plastics products,1226.01,2026-08-20
-2026-08-20T00:18:24.7,TVSSRICHAK,2.19,11.41,28.05,auto,tyres,2004.69,2026-08-20
-2026-08-20T00:18:24.7,UFLEX,2.21,16.51,31.69,industrials,packaging,2485.08,2026-08-20
-2026-08-20T00:18:24.7,PONNIERODE,2.25,15.76,19.09,fmcg,sugar,173.95,2026-08-20
-2026-08-20T00:18:24.7,SONAMLTD,2.61,25.44,29.53,consumer discretionary,miscellaneous,112.64,2026-08-20
-2026-08-20T00:18:24.7,AVADHSUGAR,2.63,16.39,23.19,fmcg,sugar,589.86,2026-08-20
-2026-08-20T00:18:24.7,INGERRAND,2.67,7.45,13.0,industrials,compressors / drilling equipment,3662.99,2026-08-20
-2026-08-20T00:18:24.7,PREMIERPOL,2.69,27.13,32.02,plastic products,plastics products,277.46,2026-08-20
-2026-08-20T00:18:24.7,GNFC,2.7,8.59,12.69,chemicals,chemicals,5194.66,2026-08-20
-2026-08-20T00:18:24.7,5PAISA,2.72,11.63,11.63,financials,finance & investments,1207.43,2026-08-20
-2026-08-20T00:18:24.7,GOKULAGRO,2.76,7.02,7.02,fmcg,solvent extraction,1847.17,2026-08-20
-2026-08-20T00:18:24.7,PITTIENG,2.79,6.99,6.99,industrials,engineering,1845.01,2026-08-20
-2026-08-20T00:18:24.7,AKUMS,2.8,8.15,8.15,healthcare,pharmaceuticals - indian - bulk drugs & formln,2933.25,2026-08-20
-2026-08-20T00:18:24.7,TASTYBITE,2.82,9.83,17.04,fmcg,food - processing - indian,687.11,2026-08-20
-2026-08-20T00:18:24.7,MACPOWER,2.84,15.98,20.04,industrials,engineering,520.61,2026-08-20
-2026-08-20T00:18:24.7,KRISHANA,3.02,8.83,8.83,chemicals,fertilizers,325.21,2026-08-20
-2026-08-20T00:18:24.7,DHAMPURSUG,3.13,12.51,14.92,fmcg,sugar,568.0,2026-08-20
-2026-08-20T00:18:24.7,DBOL,3.18,12.37,17.26,fmcg,sugar,422.34,2026-08-20
-2026-08-20T00:18:24.7,TI,3.23,4.66,11.14,fmcg,breweries & distilleries,9702.97,2026-08-20
-2026-08-20T00:18:24.7,KMSUGAR,3.26,24.07,24.07,fmcg,sugar,130.55,2026-08-20
-2026-08-20T00:18:24.7,CHENNPETRO,3.32,13.8,13.89,energy,refineries,7016.18,2026-08-20
-2026-08-20T00:18:24.7,BLSE,3.32,3.12,3.52,i.t,computers - software - medium / small,802.71,2026-08-20
-2026-08-20T00:18:24.7,MMP,3.36,19.66,22.39,metals & mining,aluminium and aluminium products,0.0,2026-08-20
-2026-08-20T00:18:24.7,NILKAMAL,3.38,18.52,18.52,plastic products,plastics products,1076.18,2026-08-20
-2026-08-20T00:18:24.7,MAWANASUG,3.41,14.4,18.99,fmcg,sugar,183.84,2026-08-20
-2026-08-20T00:18:24.7,ALIVUS,3.46,4.45,4.45,healthcare,pharmaceuticals - indian - bulk drugs & formln,4222.0,2026-08-20
-2026-08-20T00:18:24.7,EPL,3.48,5.64,5.81,industrials,packaging,5913.86,2026-08-20
-2026-08-20T00:18:24.7,MUFIN,3.49,3.23,3.58,financials,finance & investments,1410.91,2026-08-20
-2026-08-20T00:18:24.7,UNIMECH,3.64,5.05,9.73,aerospace & defence,engineering,1538.11,2026-08-20
-2026-08-20T00:18:24.7,ARTEMISMED,3.67,4.19,5.42,healthcare,healthcare,2067.88,2026-08-20
-2026-08-20T00:18:24.7,MAXESTATES,3.89,14.8,21.37,realty,construction,4386.94,2026-08-20
-2026-08-20T00:18:24.7,KENNAMET,4.21,5.97,8.48,industrials,castings & forgings,1986.89,2026-08-20
-2026-08-20T00:18:24.7,MARINE,4.27,6.54,11.82,industrials,electric equipment,1653.24,2026-08-20
-2026-08-20T00:18:24.7,ROLEXRINGS,4.27,5.27,5.6,auto,auto ancillaries,2272.27,2026-08-20
-2026-08-20T00:18:24.7,SEAMECLTD,4.3,7.27,11.52,miscellaneous,miscellaneous,1134.6,2026-08-20
-2026-08-20T00:18:24.7,ICIL,4.31,24.43,24.43,textiles,textiles - cotton/blended,3626.18,2026-08-20
-2026-08-20T00:18:24.7,MMFL,4.38,22.18,22.18,industrials,castings & forgings,1386.76,2026-08-20
-2026-08-20T00:18:24.7,ARVSMART,4.5,4.38,4.44,realty,construction,1403.32,2026-08-20
-2026-08-20T00:18:24.7,KABRAEXTRU,4.55,6.21,9.77,industrials,engineering,692.82,2026-08-20
-2026-08-20T00:18:24.7,ACMESOLAR,4.58,6.95,6.95,realty,engineering - turnkey services,7689.42,2026-08-20
-2026-08-20T00:18:24.7,FCL,4.66,9.48,11.86,chemicals,chemicals,1974.67,2026-08-20
-2026-08-20T00:18:24.7,FILATEX,4.72,9.87,10.12,textiles,textiles - manmade,1274.89,2026-08-20
-2026-08-20T00:18:24.7,CAPLIPOINT,4.74,6.05,8.67,healthcare,pharmaceuticals - indian - formulations,5751.16,2026-08-20
-2026-08-20T00:18:24.7,SGFIN,4.77,8.23,10.36,financials,finance & investments,1964.99,2026-08-20
-2026-08-20T00:18:24.7,MAGADSUGAR,4.82,9.7,14.39,fmcg,sugar,318.9,2026-08-20
-2026-08-20T00:18:24.7,USHAMART,4.92,3.58,3.87,metals & mining,steel - medium / small,9220.94,2026-08-20
-2026-08-20T00:18:24.7,KDDL,4.94,6.79,6.96,consumer discretionary,miscellaneous,2422.33,2026-08-20
-2026-08-20T00:18:24.7,PGIL,4.96,6.6,7.46,consumer discretionary,textiles - products,4334.84,2026-08-20
-2026-08-20T00:18:24.7,VARROC,5.02,6.23,6.23,auto,auto ancillaries,3173.76,2026-08-20
-2026-08-20T00:18:24.7,HNDFDS,5.09,15.17,16.01,fmcg,diversified - large,2973.57,2026-08-20
-2026-08-20T00:18:24.7,PARAS,5.11,17.16,23.19,aerospace & defence,engineering,5644.23,2026-08-20
-2026-08-20T00:18:24.7,FINEORG,5.12,3.53,4.95,chemicals,chemicals,3932.47,2026-08-20
-2026-08-20T00:18:24.7,DIACABS,5.17,5.92,6.57,industrials,cables - power,3026.04,2026-08-20
-2026-08-20T00:18:24.7,ESAFSFB,5.27,10.88,11.76,bank,banks - private sector,794.87,2026-08-20
-2026-08-20T00:18:24.7,KOPRAN,5.27,9.87,22.32,healthcare,pharmaceuticals - indian - bulk drugs & formln,556.75,2026-08-20
-2026-08-20T00:18:24.7,VIJAYA,5.28,3.72,7.37,healthcare,healthcare,7280.67,2026-08-20
-2026-08-20T00:18:24.7,DIAMONDYD,5.29,3.67,3.67,fmcg,food - processing - indian,1218.78,2026-08-20
-2026-08-20T00:18:24.7,MANORAMA,5.29,17.04,27.29,fmcg,food - processing - indian,5277.35,2026-08-20
-2026-08-20T00:18:24.7,AZAD,5.3,10.49,20.43,aerospace & defence,engineering,8065.89,2026-08-20
-2026-08-20T00:18:24.7,JGCHEM,5.3,12.15,12.15,chemicals,chemicals,713.73,2026-08-20
+2026-08-20T00:43:47.845,BLISSGVS,0.0,14.47,15.66,healthcare,pharmaceuticals - indian - formulations,3954.98,2026-08-20
+2026-08-20T00:43:47.845,SALSTEEL,0.0,18.91,27.06,metals & mining,steel - sponge iron,332.76,2026-08-20
+2026-08-20T00:43:47.845,MODISONLTD,0.05,10.24,26.43,industrials,electric equipment,608.23,2026-08-20
+2026-08-20T00:43:47.845,TFCILTD,0.44,14.77,15.01,financials,finance - term-lending institutions,5850.01,2026-08-20
+2026-08-20T00:43:47.845,DALMIASUG,0.67,12.38,16.93,fmcg,sugar,965.61,2026-08-20
+2026-08-20T00:43:47.845,WELSPUNLIV,0.91,10.92,15.02,textiles,textiles - products,5760.04,2026-08-20
+2026-08-20T00:43:47.845,ADOR,0.93,8.52,11.58,industrials,electrodes - welding equipment,1315.43,2026-08-20
+2026-08-20T00:43:47.845,STYLEBAAZA,1.0,10.23,23.39,consumer discretionary,trading,1775.99,2026-08-20
+2026-08-20T00:43:47.845,AVALON,1.05,16.5,18.69,consumer discretionary,electronics - components,8343.27,2026-08-20
+2026-08-20T00:43:47.845,ASIANENE,1.05,30.07,32.06,energy,oil drilling / allied services,1021.16,2026-08-20
+2026-08-20T00:43:47.845,PRUDENT,1.18,4.48,5.34,financials,finance & investments,6279.95,2026-08-20
+2026-08-20T00:43:47.845,RISHABH,1.25,13.52,13.52,industrials,electric equipment,815.83,2026-08-20
+2026-08-20T00:43:47.845,HAPPYFORGE,1.37,10.63,17.79,industrials,castings & forgings,4692.23,2026-08-20
+2026-08-20T00:43:47.845,SCPL,1.56,9.3,18.74,fmcg,food - processing - indian,213.06,2026-08-20
+2026-08-20T00:43:47.845,RPEL,1.66,18.73,28.91,building materials,refractories / intermediates,2790.02,2026-08-20
+2026-08-20T00:43:47.845,MPSLTD,1.66,5.84,8.22,i.t,computers - software - medium / small,1586.44,2026-08-20
+2026-08-20T00:43:47.845,THELEELA,1.66,8.77,8.77,services,hotels,4286.9,2026-08-20
+2026-08-20T00:43:47.845,UTTAMSUGAR,1.89,16.49,22.32,fmcg,sugar,290.31,2026-08-20
+2026-08-20T00:43:47.845,GULFPETRO,1.93,10.88,11.66,chemicals,chemicals,207.35,2026-08-20
+2026-08-20T00:43:47.845,GHCLTEXTIL,1.94,10.11,12.76,textiles,textiles - spinning - synthetic / blended,976.21,2026-08-20
+2026-08-20T00:43:47.845,APOLLOPIPE,2.13,16.41,16.74,plastic products,plastics products,1226.01,2026-08-20
+2026-08-20T00:43:47.845,TVSSRICHAK,2.19,11.41,28.05,auto,tyres,2004.69,2026-08-20
+2026-08-20T00:43:47.845,UFLEX,2.21,16.51,31.69,industrials,packaging,2485.08,2026-08-20
+2026-08-20T00:43:47.845,PONNIERODE,2.25,15.76,19.09,fmcg,sugar,173.95,2026-08-20
+2026-08-20T00:43:47.845,SONAMLTD,2.61,25.44,29.53,consumer discretionary,miscellaneous,112.64,2026-08-20
+2026-08-20T00:43:47.845,AVADHSUGAR,2.63,16.39,23.19,fmcg,sugar,589.86,2026-08-20
+2026-08-20T00:43:47.845,INGERRAND,2.67,7.45,13.0,industrials,compressors / drilling equipment,3662.99,2026-08-20
+2026-08-20T00:43:47.845,PREMIERPOL,2.69,27.13,32.02,plastic products,plastics products,277.46,2026-08-20
+2026-08-20T00:43:47.845,GNFC,2.7,8.59,12.69,chemicals,chemicals,5194.66,2026-08-20
+2026-08-20T00:43:47.845,5PAISA,2.72,11.63,11.63,financials,finance & investments,1207.43,2026-08-20
+2026-08-20T00:43:47.845,GOKULAGRO,2.76,7.02,7.02,fmcg,solvent extraction,1847.17,2026-08-20
+2026-08-20T00:43:47.845,PITTIENG,2.79,6.99,6.99,industrials,engineering,1845.01,2026-08-20
+2026-08-20T00:43:47.845,AKUMS,2.8,8.15,8.15,healthcare,pharmaceuticals - indian - bulk drugs & formln,2933.25,2026-08-20
+2026-08-20T00:43:47.845,TASTYBITE,2.82,9.83,17.04,fmcg,food - processing - indian,687.11,2026-08-20
+2026-08-20T00:43:47.845,MACPOWER,2.84,15.98,20.04,industrials,engineering,520.61,2026-08-20
+2026-08-20T00:43:47.845,KRISHANA,3.02,8.83,8.83,chemicals,fertilizers,325.21,2026-08-20
+2026-08-20T00:43:47.845,DHAMPURSUG,3.13,12.51,14.92,fmcg,sugar,568.0,2026-08-20
+2026-08-20T00:43:47.845,DBOL,3.18,12.37,17.26,fmcg,sugar,422.34,2026-08-20
+2026-08-20T00:43:47.845,TI,3.23,4.66,11.14,fmcg,breweries & distilleries,9702.97,2026-08-20
+2026-08-20T00:43:47.845,KMSUGAR,3.26,24.07,24.07,fmcg,sugar,130.55,2026-08-20
+2026-08-20T00:43:47.845,CHENNPETRO,3.32,13.8,13.89,energy,refineries,7016.18,2026-08-20
+2026-08-20T00:43:47.845,BLSE,3.32,3.12,3.52,i.t,computers - software - medium / small,802.71,2026-08-20
+2026-08-20T00:43:47.845,MMP,3.36,19.66,22.39,metals & mining,aluminium and aluminium products,0.0,2026-08-20
+2026-08-20T00:43:47.845,NILKAMAL,3.38,18.52,18.52,plastic products,plastics products,1076.18,2026-08-20
+2026-08-20T00:43:47.845,MAWANASUG,3.41,14.4,18.99,fmcg,sugar,183.84,2026-08-20
+2026-08-20T00:43:47.845,ALIVUS,3.46,4.45,4.45,healthcare,pharmaceuticals - indian - bulk drugs & formln,4222.0,2026-08-20
+2026-08-20T00:43:47.845,EPL,3.48,5.64,5.81,industrials,packaging,5913.86,2026-08-20
+2026-08-20T00:43:47.845,MUFIN,3.49,3.23,3.58,financials,finance & investments,1410.91,2026-08-20
+2026-08-20T00:43:47.845,UNIMECH,3.64,5.05,9.73,aerospace & defence,engineering,1538.11,2026-08-20
+2026-08-20T00:43:47.845,ARTEMISMED,3.67,4.19,5.42,healthcare,healthcare,2067.88,2026-08-20
+2026-08-20T00:43:47.845,MAXESTATES,3.89,14.8,21.37,realty,construction,4386.94,2026-08-20
+2026-08-20T00:43:47.845,KENNAMET,4.21,5.97,8.48,industrials,castings & forgings,1986.89,2026-08-20
+2026-08-20T00:43:47.845,MARINE,4.27,6.54,11.82,industrials,electric equipment,1653.24,2026-08-20
+2026-08-20T00:43:47.845,ROLEXRINGS,4.27,5.27,5.6,auto,auto ancillaries,2272.27,2026-08-20
+2026-08-20T00:43:47.845,SEAMECLTD,4.3,7.27,11.52,miscellaneous,miscellaneous,1134.6,2026-08-20
+2026-08-20T00:43:47.845,ICIL,4.31,24.43,24.43,textiles,textiles - cotton/blended,3626.18,2026-08-20
+2026-08-20T00:43:47.845,MMFL,4.38,22.18,22.18,industrials,castings & forgings,1386.76,2026-08-20
+2026-08-20T00:43:47.845,ARVSMART,4.5,4.38,4.44,realty,construction,1403.32,2026-08-20
+2026-08-20T00:43:47.845,KABRAEXTRU,4.55,6.21,9.77,industrials,engineering,692.82,2026-08-20
+2026-08-20T00:43:47.845,ACMESOLAR,4.58,6.95,6.95,realty,engineering - turnkey services,7689.42,2026-08-20
+2026-08-20T00:43:47.845,FCL,4.66,9.48,11.86,chemicals,chemicals,1974.67,2026-08-20
+2026-08-20T00:43:47.845,FILATEX,4.72,9.87,10.12,textiles,textiles - manmade,1274.89,2026-08-20
+2026-08-20T00:43:47.845,CAPLIPOINT,4.74,6.05,8.67,healthcare,pharmaceuticals - indian - formulations,5751.16,2026-08-20
+2026-08-20T00:43:47.845,SGFIN,4.77,8.23,10.36,financials,finance & investments,1964.99,2026-08-20
+2026-08-20T00:43:47.845,MAGADSUGAR,4.82,9.7,14.39,fmcg,sugar,318.9,2026-08-20
+2026-08-20T00:43:47.845,USHAMART,4.92,3.58,3.87,metals & mining,steel - medium / small,9220.94,2026-08-20
+2026-08-20T00:43:47.845,KDDL,4.94,6.79,6.96,consumer discretionary,miscellaneous,2422.33,2026-08-20
+2026-08-20T00:43:47.845,PGIL,4.96,6.6,7.46,consumer discretionary,textiles - products,4334.84,2026-08-20
+2026-08-20T00:43:47.845,VARROC,5.02,6.23,6.23,auto,auto ancillaries,3173.76,2026-08-20
+2026-08-20T00:43:47.845,HNDFDS,5.09,15.17,16.01,fmcg,diversified - large,2973.57,2026-08-20
+2026-08-20T00:43:47.845,PARAS,5.11,17.16,23.19,aerospace & defence,engineering,5644.23,2026-08-20
+2026-08-20T00:43:47.845,FINEORG,5.12,3.53,4.95,chemicals,chemicals,3932.47,2026-08-20
+2026-08-20T00:43:47.845,DIACABS,5.17,5.92,6.57,industrials,cables - power,3026.04,2026-08-20
+2026-08-20T00:43:47.845,ESAFSFB,5.27,10.88,11.76,bank,banks - private sector,794.87,2026-08-20
+2026-08-20T00:43:47.845,KOPRAN,5.27,9.87,22.32,healthcare,pharmaceuticals - indian - bulk drugs & formln,556.75,2026-08-20
+2026-08-20T00:43:47.845,VIJAYA,5.28,3.72,7.37,healthcare,healthcare,7280.67,2026-08-20
+2026-08-20T00:43:47.845,DIAMONDYD,5.29,3.67,3.67,fmcg,food - processing - indian,1218.78,2026-08-20
+2026-08-20T00:43:47.845,MANORAMA,5.29,17.04,27.29,fmcg,food - processing - indian,5277.35,2026-08-20
+2026-08-20T00:43:47.845,AZAD,5.3,10.49,20.43,aerospace & defence,engineering,8065.89,2026-08-20
+2026-08-20T00:43:47.845,JGCHEM,5.3,12.15,12.15,chemicals,chemicals,713.73,2026-08-20
 2026-08-19T23:31:35.376,BLISSGVS,0.0,14.47,15.66,healthcare,pharmaceuticals - indian - formulations,3954.98,2026-08-19
 2026-08-19T23:31:35.376,SALSTEEL,0.0,18.91,27.06,metals & mining,steel - sponge iron,332.76,2026-08-19
 2026-08-19T23:31:35.376,MODISONLTD,0.05,10.24,26.43,industrials,electric equipment,608.23,2026-08-19
