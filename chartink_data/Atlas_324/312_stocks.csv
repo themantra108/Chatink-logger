@@ -1,4 +1,84 @@
 Timestamp,Symbol,From52wh,3d range,5d,Sector,Industry,Free float,Scan_Date
+2026-09-24T15:28:23.683,KABRAEXTRU,0.0,21.77,26.01,industrials,engineering,1115.17,2026-09-24
+2026-09-24T15:28:23.683,STLNETWORK,0.0,18.56,21.49,telecom-service,telecommunications - service provider,1422.6,2026-09-24
+2026-09-24T15:28:23.683,SALSTEEL,0.0,12.3,12.3,metals & mining,steel - sponge iron,374.97,2026-09-24
+2026-09-24T15:28:23.683,ABDL,0.02,14.29,14.29,fmcg,breweries & distilleries,3853.96,2026-09-24
+2026-09-24T15:28:23.683,RAYMOND,0.38,13.55,25.78,transportation,transport - airlines,4137.0,2026-09-24
+2026-09-24T15:28:23.683,GLOBAL,1.06,12.09,14.35,services,miscellaneous,196.41,2026-09-24
+2026-09-24T15:28:23.683,SOMANYCERA,1.08,4.69,9.05,building materials,ceramics - tiles / sanitaryware,1105.9,2026-09-24
+2026-09-24T15:28:23.683,BLUSPRING,1.34,17.11,17.49,miscellaneous,diversified - large,882.96,2026-09-24
+2026-09-24T15:28:23.683,NAZARA,1.46,3.83,4.25,i.t,telecommunications - service provider,9121.0,2026-09-24
+2026-09-24T15:28:23.683,GNFC,1.64,7.75,10.63,chemicals,chemicals,5386.99,2026-09-24
+2026-09-24T15:28:23.683,BHAGERIA,1.71,9.47,13.29,chemicals,dyes and pigments,445.92,2026-09-24
+2026-09-24T15:28:23.683,STEELCAS,1.78,7.35,18.95,industrials,castings & forgings,1995.41,2026-09-24
+2026-09-24T15:28:23.683,SPECTRUM,2.17,10.35,15.02,industrials,electric equipment,1882.02,2026-09-24
+2026-09-24T15:28:23.683,GCSL,2.59,5.18,10.26,financials,finance & investments,623.84,2026-09-24
+2026-09-24T15:28:23.683,TFCILTD,2.86,3.35,3.94,financials,finance - term-lending institutions,6385.11,2026-09-24
+2026-09-24T15:28:23.683,SWANDEF,2.88,6.35,6.35,transportation,miscellaneous,1449.41,2026-09-24
+2026-09-24T15:28:23.683,SANATHAN,3.09,16.6,16.6,textiles,textiles - cotton/blended,953.63,2026-09-24
+2026-09-24T15:28:23.683,CPCAP,3.24,6.36,13.82,financials,finance & investments,102.27,2026-09-24
+2026-09-24T15:28:23.683,SIGMAADV,3.28,9.25,17.92,aerospace & defence,electronics - components,4808.01,2026-09-24
+2026-09-24T15:28:23.683,LOTUSDEV,3.32,6.3,8.11,realty,construction,1936.24,2026-09-24
+2026-09-24T15:28:23.683,TI,3.32,6.24,10.4,fmcg,breweries & distilleries,9935.46,2026-09-24
+2026-09-24T15:28:23.683,RAYMONDREL,3.35,22.35,23.15,realty,construction,2320.49,2026-09-24
+2026-09-24T15:28:23.683,USHAMART,3.36,5.05,9.84,metals & mining,steel - medium / small,9640.11,2026-09-24
+2026-09-24T15:28:23.683,SHANTIGOLD,3.45,14.73,21.14,consumer discretionary,diamond cutting / jewellery,513.45,2026-09-24
+2026-09-24T15:28:23.683,MUKANDLTD,3.5,18.65,20.99,metals & mining,steel - medium / small,569.3,2026-09-24
+2026-09-24T15:28:23.683,TBZ,3.52,9.68,19.4,consumer discretionary,diamond cutting / jewellery,1164.06,2026-09-24
+2026-09-24T15:28:23.683,NRBBEARING,3.53,5.95,16.12,industrials,bearings,2836.34,2026-09-24
+2026-09-24T15:28:23.683,GMMPFAUDLR,3.53,7.15,11.94,industrials,engineering,4976.59,2026-09-24
+2026-09-24T15:28:23.683,KROSS,3.53,11.19,19.23,auto,auto ancillaries,553.62,2026-09-24
+2026-09-24T15:28:23.683,SSWL,3.54,8.9,11.34,auto,auto ancillaries,2296.81,2026-09-24
+2026-09-24T15:28:23.683,KAPSTON,3.59,4.55,4.55,miscellaneous,miscellaneous,477.63,2026-09-24
+2026-09-24T15:28:23.683,CAPLIPOINT,3.64,8.25,15.18,healthcare,pharmaceuticals - indian - formulations,6445.28,2026-09-24
+2026-09-24T15:28:23.683,KDDL,3.73,8.37,11.78,consumer discretionary,miscellaneous,2520.94,2026-09-24
+2026-09-24T15:28:23.683,RUBYMILLS,3.79,19.21,19.21,textiles,textiles - composite,415.84,2026-09-24
+2026-09-24T15:28:23.683,TIRUPATIFL,3.8,10.24,28.92,industrials,castings & forgings,524.0,2026-09-24
+2026-09-24T15:28:23.683,INDIAGLYCO,3.86,22.7,23.63,fmcg,breweries & distilleries,822.86,2026-09-24
+2026-09-24T15:28:23.683,SBC,3.86,3.8,4.32,textiles,textiles - products,1137.45,2026-09-24
+2026-09-24T15:28:23.683,MARKSANS,3.9,6.79,10.14,healthcare,pharmaceuticals - indian - formulations,8577.68,2026-09-24
+2026-09-24T15:28:23.683,HARSHA,3.94,4.53,9.55,industrials,engineering,1042.46,2026-09-24
+2026-09-24T15:28:23.683,PGIL,3.97,16.6,18.4,consumer discretionary,textiles - products,4725.21,2026-09-24
+2026-09-24T15:28:23.683,JTLIND,3.99,4.8,7.78,metals & mining,steel - medium / small,1799.98,2026-09-24
+2026-09-24T15:28:23.683,BLSE,4.03,7.06,8.37,i.t,computers - software - medium / small,833.38,2026-09-24
+2026-09-24T15:28:23.683,SMSPHARMA,4.07,5.69,18.92,healthcare,pharmaceuticals - indian - bulk drugs,1418.64,2026-09-24
+2026-09-24T15:28:23.683,TALBROAUTO,4.09,6.46,11.04,auto,auto ancillaries,1195.53,2026-09-24
+2026-09-24T15:28:23.683,SMLMAH,4.09,6.93,10.89,auto,automobiles - lcvs / hcvs,3928.82,2026-09-24
+2026-09-24T15:28:23.683,MITCON,4.11,17.37,17.52,miscellaneous,miscellaneous,155.06,2026-09-24
+2026-09-24T15:28:23.683,VIJAYA,4.17,5.84,6.88,healthcare,healthcare,7462.44,2026-09-24
+2026-09-24T15:28:23.683,JASH,4.2,5.39,18.49,industrials,engineering,2071.96,2026-09-24
+2026-09-24T15:28:23.683,ORCHPHARMA,4.23,6.36,19.36,healthcare,pharmaceuticals - indian - bulk drugs & formln,1675.49,2026-09-24
+2026-09-24T15:28:23.683,SHYAMMETL,4.28,5.72,7.19,metals & mining,steel - large,7795.28,2026-09-24
+2026-09-24T15:28:23.683,QPOWER,4.32,5.28,6.81,industrials,electric equipment,3034.94,2026-09-24
+2026-09-24T15:28:23.683,ENGINERSIN,4.35,9.95,17.46,realty,engineering - turnkey services,8099.45,2026-09-24
+2026-09-24T15:28:23.683,METROPOLIS,4.41,3.55,5.08,healthcare,healthcare,6172.48,2026-09-24
+2026-09-24T15:28:23.683,EDELWEISS,4.45,5.18,13.69,financials,finance & investments,8944.01,2026-09-24
+2026-09-24T15:28:23.683,MANINDS,4.47,19.62,22.21,metals & mining,steel - medium / small,4089.79,2026-09-24
+2026-09-24T15:28:23.683,GNA,4.48,17.69,20.01,auto,auto ancillaries,909.24,2026-09-24
+2026-09-24T15:28:23.683,ONEPOINT,4.5,20.57,23.42,i.t,computers - software - medium / small,867.03,2026-09-24
+2026-09-24T15:28:23.683,RGL,4.64,11.76,14.27,consumer discretionary,diamond cutting / jewellery,677.06,2026-09-24
+2026-09-24T15:28:23.683,STAR,4.64,4.28,5.47,healthcare,pharmaceuticals - indian - bulk drugs & formln,7989.16,2026-09-24
+2026-09-24T15:28:23.683,WSTCSTPAPR,4.96,4.13,8.83,building materials,paper,2118.0,2026-09-24
+2026-09-24T15:28:23.683,UNIDT,4.99,29.08,29.08,industrials,engineering,133.03,2026-09-24
+2026-09-24T15:28:23.683,GOODLUCK,5.01,5.54,8.26,metals & mining,steel - medium / small,809.51,2026-09-24
+2026-09-24T15:28:23.683,MAXESTATES,5.02,11.33,13.53,realty,construction,5549.13,2026-09-24
+2026-09-24T15:28:23.683,ORIENTHOT,5.07,3.15,5.27,services,hotels,794.08,2026-09-24
+2026-09-24T15:28:23.683,PREMIERPOL,5.12,33.87,35.64,plastic products,plastics products,304.6,2026-09-24
+2026-09-24T15:28:23.683,BLISSGVS,5.22,10.05,10.05,healthcare,pharmaceuticals - indian - formulations,4755.9,2026-09-24
+2026-09-24T15:28:23.683,VSSL,5.27,7.26,7.26,metals & mining,steel - medium / small,1919.81,2026-09-24
+2026-09-24T15:28:23.683,FILATEX,5.29,12.14,27.09,textiles,textiles - manmade,1619.1,2026-09-24
+2026-09-24T15:28:23.683,EMUDHRA,5.35,8.17,13.39,i.t,computers - software - medium / small,2493.11,2026-09-24
+2026-09-24T15:28:23.683,JYOTICNC,5.39,4.34,15.89,industrials,engineering,9143.71,2026-09-24
+2026-09-24T15:28:23.683,BODALCHEM,5.49,9.67,11.93,chemicals,dyes and pigments,1054.46,2026-09-24
+2026-09-24T15:28:23.683,ROSSTECH,5.49,10.36,14.88,aerospace & defence,engineering,1351.03,2026-09-24
+2026-09-24T15:28:23.683,RATNAVEER,5.5,6.72,15.78,metals & mining,steel - medium / small,1264.86,2026-09-24
+2026-09-24T15:28:23.683,KOPRAN,5.5,6.37,10.0,healthcare,pharmaceuticals - indian - bulk drugs & formln,728.34,2026-09-24
+2026-09-24T15:28:23.683,VISHNU,5.52,4.53,4.53,chemicals,chemicals,1457.09,2026-09-24
+2026-09-24T15:28:23.683,LUMAXTECH,5.54,8.05,9.3,auto,auto ancillaries,6206.48,2026-09-24
+2026-09-24T15:28:23.683,CEIGALL,5.6,7.29,7.29,realty,construction,1197.18,2026-09-24
+2026-09-24T15:28:23.683,KSL,5.66,9.46,10.42,metals & mining,steel - medium / small,1501.52,2026-09-24
+2026-09-24T15:28:23.683,SAMBHV,5.71,6.76,25.22,metals & mining,steel - medium / small,1971.17,2026-09-24
+2026-09-24T15:28:23.683,PAISALO,5.82,7.12,8.06,financials,finance & investments,4330.69,2026-09-24
 2026-08-10T08:51:21.58,SBCL,0.0,20.93,23.28,metals & mining,mining / minerals / metals,3521.68,2026-08-10
 2026-08-10T08:51:21.58,SICAGEN,0.0,50.77,52.7,services,trading,113.92,2026-08-10
 2026-08-10T08:51:21.58,RKFORGE,0.34,5.91,13.49,industrials,castings & forgings,7492.58,2026-08-10
